@@ -1,0 +1,68 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/combat_ui.gd" id="1_ui"]
+
+[node name="UI" type="CanvasLayer"]
+script = ExtResource("1_ui")
+
+[node name="Panel" type="PanelContainer" parent="."]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 300.0
+offset_bottom = 112.0
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Stats" type="VBoxContainer" parent="Panel/Margin"]
+
+[node name="PlayerHP" type="Label" parent="Panel/Margin/Stats"]
+text = "Player HP: -"
+
+[node name="EnemyHP" type="Label" parent="Panel/Margin/Stats"]
+text = "Enemy HP: -"
+
+[node name="Stamina" type="Label" parent="Panel/Margin/Stats"]
+text = "Stamina: -"
+
+[node name="DeathOverlay" type="Control" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dim" type="ColorRect" parent="DeathOverlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.58)
+
+[node name="Center" type="CenterContainer" parent="DeathOverlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Box" type="VBoxContainer" parent="DeathOverlay/Center"]
+alignment = 1
+
+[node name="Title" type="Label" parent="DeathOverlay/Center/Box"]
+text = "YOU DIED"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 42
+
+[node name="Instructions" type="Label" parent="DeathOverlay/Center/Box"]
+text = "Press R to retry  |  F5 resets anytime"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18

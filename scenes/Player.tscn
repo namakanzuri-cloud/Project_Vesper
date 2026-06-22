@@ -1,0 +1,79 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scripts/player_controller.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/health.gd" id="2_health"]
+[ext_resource type="Script" path="res://scripts/stamina.gd" id="3_stamina"]
+[ext_resource type="Script" path="res://scripts/combat_hitbox.gd" id="4_hitbox"]
+
+[sub_resource type="StandardMaterial3D" id="Material_player"]
+albedo_color = Color(0.2, 0.62, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="Material_player_guide"]
+albedo_color = Color(1, 0.92, 0.18, 1)
+emission_enabled = true
+emission = Color(1, 0.82, 0.12, 1)
+emission_energy_multiplier = 0.35
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_player"]
+radius = 0.45
+height = 2.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_player_guide"]
+size = Vector3(0.16, 0.16, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="Material_attack_debug"]
+albedo_color = Color(0.25, 1, 0.45, 0.35)
+emission_enabled = true
+emission = Color(0.2, 1, 0.35, 1)
+emission_energy_multiplier = 0.25
+
+[sub_resource type="SphereMesh" id="SphereMesh_attack_debug"]
+radius = 1.0
+height = 2.0
+radial_segments = 24
+rings = 12
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_player"]
+radius = 0.45
+height = 2.0
+
+[node name="Player" type="CharacterBody3D" groups=["player"]]
+collision_layer = 2
+collision_mask = 5
+script = ExtResource("1_player")
+enemy_collision_mask = 4
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("CapsuleMesh_player")
+surface_material_override/0 = SubResource("Material_player")
+
+[node name="FacingGuide" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -0.82)
+mesh = SubResource("BoxMesh_player_guide")
+surface_material_override/0 = SubResource("Material_player_guide")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape_player")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("2_health")
+max_health = 100.0
+
+[node name="Stamina" type="Node" parent="."]
+script = ExtResource("3_stamina")
+max_stamina = 100.0
+recovery_per_second = 28.0
+recovery_delay = 0.35
+
+[node name="AttackHitbox" type="Node3D" parent="."]
+script = ExtResource("4_hitbox")
+radius = 0.9
+target_group = &"enemy"
+collision_mask = 4
+enabled = false
+debug_visual_path = NodePath("DebugVisual")
+
+[node name="DebugVisual" type="MeshInstance3D" parent="AttackHitbox"]
+visible = false
+mesh = SubResource("SphereMesh_attack_debug")
+surface_material_override/0 = SubResource("Material_attack_debug")
