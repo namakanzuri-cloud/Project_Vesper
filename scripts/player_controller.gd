@@ -47,6 +47,19 @@ enum AttackPhase { NONE, WINDUP, ACTIVE, RECOVERY }
 @export_group("Collision")
 @export_flags_3d_physics var enemy_collision_mask: int = 4
 
+@export_group("Hit Stop")
+@export var hit_stop_path: NodePath
+
+@export_group("Camera Shake")
+@export var camera_follow_path: NodePath
+
+@export_group("Hit VFX")
+@export var hit_vfx_scene: PackedScene = preload("res://scenes/HitVfx.tscn")
+@export var light_hit_vfx_scale: float = 0.85
+@export var heavy_hit_vfx_scale: float = 1.25
+@export var hit_vfx_lifetime: float = 0.22
+@export var hit_vfx_vertical_offset: float = 0.85
+
 @onready var health: Health = $Health
 @onready var stamina: Stamina = $Stamina
 @onready var attack_hitbox: CombatHitbox = $AttackHitbox
@@ -67,14 +80,19 @@ var _current_attack_recovery: float = 0.0
 var _attack_direction: Vector3 = Vector3.FORWARD
 var _attack_damaged_targets: Array[Node] = []
 var _body_material: StandardMaterial3D
+var _controls_enabled: bool = true
+var _hit_stop
+var _camera_follow: CameraFollow
 
 func _ready() -> void:
+	_resolve_hit_stop()
+	_resolve_camera_follow()
 	_setup_body_material()
 	_set_attack_hitbox_enabled(false)
 	_apply_attack_debug_color()
 
 func _physics_process(delta: float) -> void:
-	if health.is_dead():
+	if health.is_dead() or not _controls_enabled:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
@@ -221,6 +239,41 @@ func _strike_active_attack_targets() -> void:
 	for target in damaged:
 		if not _attack_damaged_targets.has(target):
 			_attack_damaged_targets.append(target)
+			_spawn_hit_vfx_for_target(target)
+
+	if not damaged.is_empty():
+		_request_hit_stop_for_current_attack()
+		_request_camera_shake_for_current_attack()
+
+func _spawn_hit_vfx_for_target(target: Node) -> void:
+	if hit_vfx_scene == null:
+		return
+
+	var target_3d := target as Node3D
+	if target_3d == null:
+		return
+
+	var hit_vfx := hit_vfx_scene.instantiate() as HitVfx
+	if hit_vfx == null:
+		return
+
+	var kind := HitVfx.HitKind.LIGHT
+	var scale := light_hit_vfx_scale
+	if _current_attack_name == &"heavy":
+		kind = HitVfx.HitKind.HEAVY
+		scale = heavy_hit_vfx_scale
+
+	hit_vfx.configure(kind, scale, hit_vfx_lifetime)
+
+	var parent := get_tree().current_scene
+	if parent == null:
+		parent = get_parent()
+	if parent == null:
+		hit_vfx.queue_free()
+		return
+
+	parent.add_child(hit_vfx)
+	hit_vfx.global_position = target_3d.global_position + Vector3.UP * hit_vfx_vertical_offset
 
 func _clear_attack_state() -> void:
 	_attack_phase = AttackPhase.NONE
@@ -242,6 +295,46 @@ func _get_locked_attack_direction() -> Vector3:
 
 	return direction.normalized()
 
+
+func _resolve_hit_stop() -> void:
+	if hit_stop_path != NodePath(""):
+		_hit_stop = get_node_or_null(hit_stop_path)
+
+	if _hit_stop == null:
+		_hit_stop = get_tree().get_first_node_in_group(&"hit_stop")
+
+func _request_hit_stop_for_current_attack() -> void:
+	if _hit_stop == null or not is_instance_valid(_hit_stop):
+		_resolve_hit_stop()
+
+	if _hit_stop == null:
+		return
+
+	match _current_attack_name:
+		&"heavy":
+			_hit_stop.request_heavy_attack_hit_stop()
+		_:
+			_hit_stop.request_light_attack_hit_stop()
+
+func _resolve_camera_follow() -> void:
+	if camera_follow_path != NodePath(""):
+		_camera_follow = get_node_or_null(camera_follow_path) as CameraFollow
+
+	if _camera_follow == null:
+		_camera_follow = get_viewport().get_camera_3d() as CameraFollow
+
+func _request_camera_shake_for_current_attack() -> void:
+	if _camera_follow == null or not is_instance_valid(_camera_follow):
+		_resolve_camera_follow()
+
+	if _camera_follow == null:
+		return
+
+	match _current_attack_name:
+		&"heavy":
+			_camera_follow.request_heavy_attack_shake()
+		_:
+			_camera_follow.request_light_attack_shake()
 
 func _set_attack_hitbox_enabled(value: bool) -> void:
 	if attack_hitbox == null:
@@ -287,7 +380,17 @@ func _apply_attack_debug_color() -> void:
 		_:
 			_body_material.albedo_color = idle_body_color
 
+func set_control_enabled(value: bool) -> void:
+	_controls_enabled = value
+	if not _controls_enabled:
+		_move_direction = Vector3.ZERO
+		_dodge_direction = Vector3.ZERO
+		_dodge_remaining = 0.0
+		velocity = Vector3.ZERO
+		_clear_attack_state()
+
 func reset_combat_state() -> void:
+	_controls_enabled = true
 	velocity = Vector3.ZERO
 	_move_direction = Vector3.ZERO
 	_last_facing = Vector3.FORWARD

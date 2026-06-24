@@ -60,8 +60,9 @@ func strike(damage: float, source: Node = null, ignored_targets: Array[Node] = [
 
 		var health := target.get_node_or_null("Health")
 		if health != null and health.has_method("take_damage"):
-			health.take_damage(damage)
-			damaged.append(target)
+			var did_damage := health.take_damage(damage) as bool
+			if did_damage:
+				damaged.append(target)
 
 	return damaged
 

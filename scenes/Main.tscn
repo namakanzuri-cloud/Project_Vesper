@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/Enemy.tscn" id="2_enemy"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/camera_follow.gd" id="4_camera"]
 [ext_resource type="Script" path="res://scripts/input_setup.gd" id="5_input"]
 [ext_resource type="Script" path="res://scripts/main.gd" id="6_main"]
+[ext_resource type="Script" path="res://scripts/hit_stop.gd" id="7_hit_stop"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -29,6 +30,9 @@ script = ExtResource("6_main")
 [node name="InputSetup" type="Node" parent="."]
 script = ExtResource("5_input")
 
+[node name="HitStop" type="Node" parent="." groups=["hit_stop"]]
+script = ExtResource("7_hit_stop")
+
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
 
@@ -45,10 +49,14 @@ shape = SubResource("BoxShape_arena")
 
 [node name="Player" parent="." instance=ExtResource("1_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1, 0)
+hit_stop_path = NodePath("../HitStop")
+camera_follow_path = NodePath("../Camera3D")
 
 [node name="Enemy" parent="." instance=ExtResource("2_enemy")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 1, 0)
 target_path = NodePath("../Player")
+hit_stop_path = NodePath("../HitStop")
+camera_follow_path = NodePath("../Camera3D")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 8)

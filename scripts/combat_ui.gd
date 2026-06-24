@@ -16,7 +16,7 @@ var _enemy_health: Health
 var _player_stamina: Stamina
 
 func _ready() -> void:
-	set_death_visible(false)
+	set_end_overlay_visible(false)
 	call_deferred("_bind_combatants")
 
 func _process(_delta: float) -> void:
@@ -25,13 +25,16 @@ func _process(_delta: float) -> void:
 
 	_update_labels()
 
-func set_death_visible(is_visible: bool, title: String = "YOU DIED", instructions: String = "Press R to retry") -> void:
+func set_end_overlay_visible(is_visible: bool, title: String = "", instructions: String = "") -> void:
 	if death_overlay == null:
 		return
 
 	death_overlay.visible = is_visible
 	death_title_label.text = title
 	death_instructions_label.text = instructions
+
+func set_death_visible(is_visible: bool, title: String = "YOU DIED", instructions: String = "Press R to retry") -> void:
+	set_end_overlay_visible(is_visible, title, instructions)
 
 func _bind_combatants() -> void:
 	var player := get_tree().get_first_node_in_group(player_group)

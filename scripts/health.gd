@@ -12,15 +12,18 @@ func _ready() -> void:
 	current_health = max_health
 	changed.emit(current_health, max_health)
 
-func take_damage(amount: float) -> void:
+func take_damage(amount: float) -> bool:
 	if is_dead() or amount <= 0.0:
-		return
+		return false
 
+	var previous_health := current_health
 	current_health = maxf(0.0, current_health - amount)
 	changed.emit(current_health, max_health)
 
 	if is_dead():
 		died.emit()
+
+	return current_health < previous_health
 
 func heal(amount: float) -> void:
 	if is_dead() or amount <= 0.0:
