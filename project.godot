@@ -40,6 +40,10 @@ dodge={
 "deadzone": 0.5,
 "events": []
 }
+parry={
+"deadzone": 0.5,
+"events": []
+}
 retry={
 "deadzone": 0.5,
 "events": []

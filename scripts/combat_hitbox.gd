@@ -29,7 +29,7 @@ func refresh_debug_visual() -> void:
 	_debug_visual.position = Vector3.UP * vertical_offset
 	_debug_visual.scale = Vector3.ONE * radius
 
-func strike(damage: float, source: Node = null, ignored_targets: Array[Node] = []) -> Array[Node]:
+func get_targets(source: Node = null, ignored_targets: Array[Node] = []) -> Array[Node]:
 	if not enabled:
 		return []
 
@@ -50,14 +50,22 @@ func strike(damage: float, source: Node = null, ignored_targets: Array[Node] = [
 		query.exclude = [(source as CollisionObject3D).get_rid()]
 
 	var hits := get_world_3d().direct_space_state.intersect_shape(query, 16)
-	var damaged: Array[Node] = []
+	var targets: Array[Node] = []
 
 	for hit in hits:
 		var collider := hit.get("collider") as Node
 		var target := _find_target_root(collider)
-		if target == null or target == source or damaged.has(target) or ignored_targets.has(target):
+		if target == null or target == source or targets.has(target) or ignored_targets.has(target):
 			continue
 
+		targets.append(target)
+
+	return targets
+
+func strike(damage: float, source: Node = null, ignored_targets: Array[Node] = []) -> Array[Node]:
+	var damaged: Array[Node] = []
+
+	for target in get_targets(source, ignored_targets):
 		var health := target.get_node_or_null("Health")
 		if health != null and health.has_method("take_damage"):
 			var did_damage := health.take_damage(damage) as bool

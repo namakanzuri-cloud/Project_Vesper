@@ -1,7 +1,7 @@
 extends Node3D
 class_name HitVfx
 
-enum HitKind { LIGHT, HEAVY, ENEMY }
+enum HitKind { LIGHT, HEAVY, ENEMY, PARRY, JUST_DODGE, RIPOSTE, VESPER_COUNTER }
 
 @export var hit_kind: HitKind = HitKind.LIGHT
 @export var effect_scale: float = 1.0
@@ -44,6 +44,14 @@ func _build_visual() -> void:
 			_build_heavy_hit()
 		HitKind.ENEMY:
 			_build_enemy_hit()
+		HitKind.PARRY:
+			_build_parry_hit()
+		HitKind.JUST_DODGE:
+			_build_just_dodge_hit()
+		HitKind.RIPOSTE:
+			_build_riposte_hit()
+		HitKind.VESPER_COUNTER:
+			_build_vesper_counter_hit()
 		_:
 			_build_light_hit()
 
@@ -75,6 +83,46 @@ func _build_enemy_hit() -> void:
 	_add_bar(magenta, PI * 0.25, Vector3(0.16, 0.5, 0.5), Vector3(1.1, 1.0, 1.1))
 	_add_bar(magenta, PI * 0.75, Vector3(0.16, 0.5, 0.5), Vector3(1.1, 1.0, 1.1))
 	_add_sparks(red, 5, 0.22, 0.58, 0.22)
+
+func _build_parry_hit() -> void:
+	var cyan := _make_material(Color(0.2, 1.0, 0.95, 0.9), 1.35)
+	var white := _make_material(Color(1.0, 1.0, 0.82, 0.84), 1.1)
+
+	_add_disc(cyan, Vector3.ZERO, Vector3(0.24, 1.0, 0.24), Vector3(1.18, 1.0, 1.18))
+	_add_sphere(white, Vector3.UP * 0.05, Vector3.ONE * 0.5, Vector3.ONE * 0.1)
+	_add_bar(white, 0.0, Vector3(0.18, 0.62, 0.62), Vector3(1.45, 1.0, 1.45))
+	_add_bar(white, PI * 0.5, Vector3(0.18, 0.62, 0.62), Vector3(1.45, 1.0, 1.45))
+	_add_sparks(cyan, 10, 0.24, 0.86, 0.0)
+
+func _build_just_dodge_hit() -> void:
+	var mint := _make_material(Color(0.55, 1.0, 0.72, 0.82), 1.0)
+	var gold := _make_material(Color(1.0, 0.9, 0.32, 0.72), 0.8)
+
+	_add_disc(mint, Vector3.ZERO, Vector3(0.28, 1.0, 0.28), Vector3(1.28, 1.0, 1.28))
+	_add_disc(gold, Vector3.UP * 0.04, Vector3(0.18, 1.0, 0.18), Vector3(0.82, 1.0, 0.82))
+	_add_sparks(mint, 8, 0.22, 0.72, 0.18)
+
+func _build_riposte_hit() -> void:
+	var teal := _make_material(Color(0.18, 1.0, 0.82, 0.9), 1.45)
+	var white := _make_material(Color(1.0, 1.0, 0.82, 0.82), 1.05)
+
+	_add_disc(teal, Vector3.ZERO, Vector3(0.24, 1.0, 0.24), Vector3(1.34, 1.0, 1.34))
+	_add_sphere(white, Vector3.UP * 0.05, Vector3.ONE * 0.52, Vector3.ONE * 0.1)
+	_add_bar(white, PI * 0.125, Vector3(0.18, 0.6, 0.6), Vector3(1.55, 1.0, 1.55))
+	_add_bar(white, PI * 0.625, Vector3(0.18, 0.6, 0.6), Vector3(1.55, 1.0, 1.55))
+	_add_sparks(teal, 12, 0.26, 0.92, 0.08)
+
+func _build_vesper_counter_hit() -> void:
+	var gold := _make_material(Color(1.0, 0.82, 0.18, 0.92), 1.65)
+	var violet := _make_material(Color(0.72, 0.45, 1.0, 0.78), 1.15)
+	var white := _make_material(Color(1.0, 1.0, 0.9, 0.86), 1.2)
+
+	_add_disc(gold, Vector3.ZERO, Vector3(0.3, 1.0, 0.3), Vector3(1.72, 1.0, 1.72))
+	_add_disc(violet, Vector3.UP * 0.05, Vector3(0.2, 1.0, 0.2), Vector3(1.18, 1.0, 1.18))
+	_add_sphere(white, Vector3.UP * 0.07, Vector3.ONE * 0.62, Vector3.ONE * 0.12)
+	_add_bar(white, 0.0, Vector3(0.2, 0.72, 0.72), Vector3(1.85, 1.0, 1.85))
+	_add_bar(white, PI * 0.5, Vector3(0.2, 0.72, 0.72), Vector3(1.85, 1.0, 1.85))
+	_add_sparks(gold, 16, 0.3, 1.12, 0.0)
 
 func _add_disc(material: StandardMaterial3D, position: Vector3, start_scale: Vector3, end_scale: Vector3) -> void:
 	var mesh := CylinderMesh.new()

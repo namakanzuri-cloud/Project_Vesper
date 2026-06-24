@@ -7,6 +7,7 @@ func _ready() -> void:
 	_add_key_action("move_forward", KEY_W)
 	_add_key_action("move_back", KEY_S)
 	_add_key_action("dodge", KEY_SPACE)
+	_add_key_action("parry", KEY_E)
 	_add_key_action("retry", KEY_R)
 	_add_key_action("debug_reset", KEY_F5)
 	_add_mouse_action("light_attack", MOUSE_BUTTON_LEFT)

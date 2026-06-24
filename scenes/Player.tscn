@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/player_controller.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/health.gd" id="2_health"]
@@ -33,6 +33,20 @@ height = 2.0
 radial_segments = 24
 rings = 12
 
+[sub_resource type="StandardMaterial3D" id="Material_parry_ring"]
+transparency = 1
+albedo_color = Color(0.2, 1, 0.95, 0.72)
+emission_enabled = true
+emission = Color(0.2, 1, 0.95, 1)
+emission_energy_multiplier = 0.45
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_parry_ring"]
+top_radius = 1.0
+bottom_radius = 1.0
+height = 0.035
+radial_segments = 48
+rings = 1
+
 [sub_resource type="CapsuleShape3D" id="CapsuleShape_player"]
 radius = 0.45
 height = 2.0
@@ -51,6 +65,13 @@ surface_material_override/0 = SubResource("Material_player")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -0.82)
 mesh = SubResource("BoxMesh_player_guide")
 surface_material_override/0 = SubResource("Material_player_guide")
+
+[node name="ParryVisual" type="MeshInstance3D" parent="."]
+visible = false
+transform = Transform3D(1.15, 0, 0, 0, 1, 0, 0, 0, 1.15, 0, -0.93, 0)
+cast_shadow = 0
+mesh = SubResource("CylinderMesh_parry_ring")
+surface_material_override/0 = SubResource("Material_parry_ring")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("CapsuleShape_player")

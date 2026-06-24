@@ -2,14 +2,14 @@
 
 [ext_resource type="Script" path="res://scripts/combat_ui.gd" id="1_ui"]
 
-[node name="UI" type="CanvasLayer"]
+[node name="UI" type="CanvasLayer" groups=["combat_ui"]]
 script = ExtResource("1_ui")
 
 [node name="Panel" type="PanelContainer" parent="."]
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 300.0
-offset_bottom = 112.0
+offset_right = 320.0
+offset_bottom = 178.0
 
 [node name="Margin" type="MarginContainer" parent="Panel"]
 theme_override_constants/margin_left = 10
@@ -28,6 +28,80 @@ text = "Enemy HP: -"
 [node name="Stamina" type="Label" parent="Panel/Margin/Stats"]
 text = "Stamina: -"
 
+[node name="Flow" type="Label" parent="Panel/Margin/Stats"]
+text = "FLOW: 0 / 100"
+theme_override_colors/font_color = Color(0.3, 1, 0.86, 1)
+
+[node name="ParryStock" type="Label" parent="Panel/Margin/Stats"]
+text = "Parry Stock: 0/3"
+theme_override_colors/font_color = Color(0.75, 0.95, 1, 1)
+
+[node name="RiposteStatus" type="Label" parent="Panel/Margin/Stats"]
+visible = false
+text = "RIPOSTE READY"
+theme_override_colors/font_color = Color(1, 0.88, 0.28, 1)
+
+[node name="ComboDisplay" type="VBoxContainer" parent="."]
+visible = false
+anchor_left = 0.62
+anchor_top = 0.18
+anchor_right = 0.98
+anchor_bottom = 0.34
+mouse_filter = 2
+pivot_offset = Vector2(140, 44)
+theme_override_constants/separation = -4
+alignment = 1
+
+[node name="HitCount" type="Label" parent="ComboDisplay"]
+layout_mode = 2
+text = "2 HIT"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.92, 0.38, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 50
+
+[node name="Rating" type="Label" parent="ComboDisplay"]
+layout_mode = 2
+text = "GOOD"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.2, 1, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.75)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 25
+
+[node name="TemporaryMessage" type="Label" parent="."]
+visible = false
+anchor_right = 1.0
+offset_top = 104.0
+offset_bottom = 160.0
+text = "PARRY!"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.2, 1, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.75)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 42
+
+
+[node name="FlowPopup" type="Label" parent="."]
+visible = false
+anchor_right = 1.0
+offset_top = 162.0
+offset_bottom = 198.0
+text = "+20 FLOW / PARRY"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.88, 0.28, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.75)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 28
 [node name="DeathOverlay" type="Control" parent="."]
 visible = false
 anchors_preset = 15

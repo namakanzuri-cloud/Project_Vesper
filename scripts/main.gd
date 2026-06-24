@@ -6,6 +6,8 @@ class_name CombatPrototypeMain
 @onready var ui: CombatUI = $UI
 @onready var hit_stop = $HitStop
 @onready var camera: CameraFollow = $Camera3D
+@onready var combo_tracker: ComboTracker = $ComboTracker
+@onready var flow_tracker: FlowTracker = $FlowTracker
 
 enum CombatState { PLAYING, VICTORY, DEFEAT }
 
@@ -22,6 +24,10 @@ func _ready() -> void:
 	player.health.died.connect(_on_player_died)
 	enemy.health.died.connect(_on_enemy_died)
 	ui.set_end_overlay_visible(false)
+	ui.clear_temporary_message()
+	ui.clear_flow_popup()
+	_reset_combo_state()
+	_reset_flow_state()
 
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("debug_reset"):
@@ -49,6 +55,18 @@ func reset_combat() -> void:
 	player.stamina.reset_stamina()
 	camera.reset_follow()
 	ui.set_end_overlay_visible(false)
+	ui.clear_temporary_message()
+	ui.clear_flow_popup()
+	_reset_combo_state()
+	_reset_flow_state()
+
+func _reset_combo_state() -> void:
+	if combo_tracker != null:
+		combo_tracker.reset_combo()
+
+func _reset_flow_state() -> void:
+	if flow_tracker != null:
+		flow_tracker.reset_flow()
 
 func _clear_active_hit_vfx() -> void:
 	for hit_vfx in get_tree().get_nodes_in_group(&"hit_vfx"):
@@ -75,6 +93,10 @@ func _enter_victory() -> void:
 	_combat_state = CombatState.VICTORY
 	player.set_control_enabled(false)
 	enemy.set_ai_enabled(false)
+	ui.clear_temporary_message()
+	ui.clear_flow_popup()
+	_reset_combo_state()
+	_reset_flow_state()
 	ui.set_end_overlay_visible(true, "VICTORY", "Enemy Defeated  |  R: Retry  |  F5: Reset")
 
 func _enter_defeat() -> void:
@@ -87,4 +109,8 @@ func _enter_defeat() -> void:
 	_combat_state = CombatState.DEFEAT
 	player.set_control_enabled(false)
 	enemy.set_ai_enabled(false)
+	ui.clear_temporary_message()
+	ui.clear_flow_popup()
+	_reset_combo_state()
+	_reset_flow_state()
 	ui.set_end_overlay_visible(true, "YOU DIED", "Press R to retry  |  F5 resets anytime")
