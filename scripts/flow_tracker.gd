@@ -38,6 +38,24 @@ func lose_flow(amount: float, reason: String) -> void:
 
 	_change_flow(-amount, reason)
 
+func can_spend(amount: float) -> bool:
+	if amount <= 0.0:
+		return true
+
+	return current_flow + 0.001 >= amount
+
+func spend(amount: float, reason: String = "SPEND") -> bool:
+	if not can_spend(amount):
+		return false
+	if amount <= 0.0:
+		return true
+
+	_change_flow(-amount, reason)
+	return true
+
+func is_full() -> bool:
+	return current_flow + 0.001 >= max_flow
+
 func reset_flow() -> void:
 	var changed := not is_equal_approx(current_flow, 0.0)
 	current_flow = 0.0

@@ -1,7 +1,7 @@
 extends Node3D
 class_name HitVfx
 
-enum HitKind { LIGHT, HEAVY, ENEMY, PARRY, JUST_DODGE, RIPOSTE, VESPER_COUNTER }
+enum HitKind { LIGHT, HEAVY, ENEMY, PARRY, JUST_DODGE, RIPOSTE, VESPER_COUNTER, VESPER_ART }
 
 @export var hit_kind: HitKind = HitKind.LIGHT
 @export var effect_scale: float = 1.0
@@ -52,6 +52,8 @@ func _build_visual() -> void:
 			_build_riposte_hit()
 		HitKind.VESPER_COUNTER:
 			_build_vesper_counter_hit()
+		HitKind.VESPER_ART:
+			_build_vesper_art_hit()
 		_:
 			_build_light_hit()
 
@@ -124,6 +126,18 @@ func _build_vesper_counter_hit() -> void:
 	_add_bar(white, PI * 0.5, Vector3(0.2, 0.72, 0.72), Vector3(1.85, 1.0, 1.85))
 	_add_sparks(gold, 16, 0.3, 1.12, 0.0)
 
+func _build_vesper_art_hit() -> void:
+	var azure := _make_material(Color(0.15, 0.78, 1.0, 0.92), 1.65)
+	var rose := _make_material(Color(1.0, 0.25, 0.62, 0.82), 1.15)
+	var white := _make_material(Color(1.0, 1.0, 0.94, 0.88), 1.2)
+
+	_add_disc(azure, Vector3.ZERO, Vector3(0.32, 1.0, 0.32), Vector3(1.88, 1.0, 1.88))
+	_add_disc(rose, Vector3.UP * 0.06, Vector3(0.18, 1.0, 0.18), Vector3(1.32, 1.0, 1.32))
+	_add_sphere(white, Vector3.UP * 0.08, Vector3.ONE * 0.68, Vector3.ONE * 0.1)
+	_add_bar(white, PI * 0.125, Vector3(0.22, 0.78, 0.78), Vector3(2.0, 1.0, 2.0))
+	_add_bar(white, PI * 0.625, Vector3(0.22, 0.78, 0.78), Vector3(2.0, 1.0, 2.0))
+	_add_sparks(azure, 18, 0.32, 1.22, 0.05)
+	_add_sparks(rose, 10, 0.22, 0.94, 0.24)
 func _add_disc(material: StandardMaterial3D, position: Vector3, start_scale: Vector3, end_scale: Vector3) -> void:
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = 1.0

@@ -60,6 +60,9 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export_range(0.0, 1.0, 0.05) var attack_active_move_speed_multiplier: float = 0.2
 @export_range(0.0, 1.0, 0.05) var attack_recovery_move_speed_multiplier: float = 0.45
 
+@export_group("Enemy AI Signals")
+@export var recent_attack_history_duration: float = 4.0
+
 @export_group("Debug")
 @export var debug_attack_state_colors: bool = true
 @export var debug_attack_hitbox: bool = true
@@ -129,6 +132,22 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export var vesper_counter_hit_vfx_scale: float = 1.85
 @export var vesper_counter_combo_extend_time: float = 2.1
 
+@export_group("Vesper Art")
+@export var vesper_art_flow_cost: float = 100.0
+@export var vesper_art_damage_multiplier: float = 2.5
+@export var vesper_art_miss_flow_cost: float = 50.0
+@export var vesper_art_windup: float = 0.32
+@export var vesper_art_active: float = 0.22
+@export var vesper_art_recovery: float = 0.42
+@export var vesper_art_hit_stop: float = 0.12
+@export var vesper_art_camera_shake: float = 1.4
+@export var vesper_art_camera_shake_duration: float = 0.18
+@export var vesper_art_hit_vfx_scale: float = 2.05
+@export var vesper_art_combo_extend_time: float = 2.0
+@export var vesper_art_ready_message: String = "VESPER ART READY"
+@export var vesper_art_hit_message: String = "VESPER ART!"
+@export var vesper_art_message_duration: float = 0.65
+
 @export_group("Combo")
 @export var combo_tracker_path: NodePath
 
@@ -157,6 +176,8 @@ var _current_attack_active: float = 0.0
 var _current_attack_recovery: float = 0.0
 var _attack_direction: Vector3 = Vector3.FORWARD
 var _attack_damaged_targets: Array[Node] = []
+var _vesper_art_hit_confirmed: bool = false
+var _recent_attack_times: Array[float] = []
 var _parry_phase: int = ParryPhase.NONE
 var _parry_phase_remaining: float = 0.0
 var _body_material: StandardMaterial3D
@@ -240,19 +261,24 @@ func _handle_actions() -> void:
 		)
 
 	if Input.is_action_just_pressed("heavy_attack"):
-		if _is_riposte_ready():
-			_try_riposte_attack()
-		else:
-			_try_attack(
-				&"heavy",
-				heavy_attack_damage,
-				heavy_attack_range,
-				heavy_attack_radius,
-				heavy_attack_stamina_cost,
-				heavy_attack_windup,
-				heavy_attack_active,
-				heavy_attack_recovery
-			)
+		_handle_heavy_attack()
+
+func _handle_heavy_attack() -> void:
+	if _is_riposte_ready():
+		_try_riposte_attack()
+	elif _can_use_vesper_art():
+		_try_vesper_art_attack()
+	else:
+		_try_attack(
+			&"heavy",
+			heavy_attack_damage,
+			heavy_attack_range,
+			heavy_attack_radius,
+			heavy_attack_stamina_cost,
+			heavy_attack_windup,
+			heavy_attack_active,
+			heavy_attack_recovery
+		)
 
 func _update_attack_state(delta: float) -> void:
 	if not _is_attacking():
@@ -270,6 +296,7 @@ func _advance_attack_phase() -> void:
 		AttackPhase.WINDUP:
 			_enter_attack_phase(AttackPhase.ACTIVE, _current_attack_active)
 		AttackPhase.ACTIVE:
+			_spend_vesper_art_miss_cost_if_needed()
 			_enter_attack_phase(AttackPhase.RECOVERY, _current_attack_recovery)
 		AttackPhase.RECOVERY:
 			_clear_attack_state()
@@ -365,6 +392,7 @@ func _try_attack(attack_name: StringName, damage: float, attack_range: float, at
 	_attack_damaged_targets.clear()
 	_last_facing = _attack_direction
 	rotation.y = atan2(-_attack_direction.x, -_attack_direction.z)
+	_record_attack_start()
 
 	_enter_attack_phase(AttackPhase.WINDUP, windup)
 	if active <= 0.0 and windup <= 0.0 and recovery <= 0.0:
@@ -415,11 +443,26 @@ func is_riposte_ready() -> bool:
 func is_vesper_counter_ready() -> bool:
 	return _is_riposte_ready() and parry_stock >= get_parry_stock_max()
 
+func is_vesper_art_ready() -> bool:
+	return _can_use_vesper_art()
+
 func get_parry_stock() -> int:
 	return parry_stock
 
 func get_parry_stock_max() -> int:
 	return maxi(1, parry_stock_max)
+
+func get_recent_attack_count(window_seconds: float) -> int:
+	var now := Time.get_ticks_msec() / 1000.0
+	var count_window := maxf(0.0, window_seconds)
+	_prune_recent_attack_times(now, maxf(count_window, recent_attack_history_duration))
+
+	var attack_count := 0
+	for attack_time in _recent_attack_times:
+		if now - attack_time <= count_window:
+			attack_count += 1
+
+	return attack_count
 
 func _on_health_changed(current_health: float, _max_health: float) -> void:
 	if current_health < _last_health_value:
@@ -465,6 +508,8 @@ func _strike_active_attack_targets() -> void:
 	if not damaged.is_empty() and _is_riposte_attack_name(_current_attack_name):
 		_add_flow_from_riposte_hit()
 		_show_riposte_hit_message()
+	elif not damaged.is_empty() and _is_vesper_art_attack_name(_current_attack_name):
+		_confirm_vesper_art_hit()
 
 	for target in damaged:
 		if not _attack_damaged_targets.has(target):
@@ -472,7 +517,7 @@ func _strike_active_attack_targets() -> void:
 			_spawn_hit_vfx_for_target(target)
 			_add_combo_from_attack_hit(target)
 			if target.has_method("receive_player_attack_hit"):
-				var interrupt_attack_name := &"heavy" if _is_riposte_attack_name(_current_attack_name) else _current_attack_name
+				var interrupt_attack_name := &"heavy" if _counts_as_heavy_interrupt_attack(_current_attack_name) else _current_attack_name
 				target.call("receive_player_attack_hit", interrupt_attack_name, self)
 
 	if not damaged.is_empty():
@@ -502,6 +547,9 @@ func _spawn_hit_vfx_for_target(target: Node) -> void:
 	elif _current_attack_name == &"vesper_counter":
 		kind = HitVfx.HitKind.VESPER_COUNTER
 		scale = vesper_counter_hit_vfx_scale
+	elif _current_attack_name == &"vesper_art":
+		kind = HitVfx.HitKind.VESPER_ART
+		scale = vesper_art_hit_vfx_scale
 
 	hit_vfx.configure(kind, scale, hit_vfx_lifetime)
 
@@ -515,6 +563,15 @@ func _spawn_hit_vfx_for_target(target: Node) -> void:
 	parent.add_child(hit_vfx)
 	hit_vfx.global_position = target_3d.global_position + Vector3.UP * hit_vfx_vertical_offset
 
+func _record_attack_start() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	_recent_attack_times.append(now)
+	_prune_recent_attack_times(now, recent_attack_history_duration)
+
+func _prune_recent_attack_times(now: float, keep_duration: float) -> void:
+	while not _recent_attack_times.is_empty() and now - _recent_attack_times[0] > keep_duration:
+		_recent_attack_times.remove_at(0)
+
 func _clear_attack_state() -> void:
 	_attack_phase = AttackPhase.NONE
 	_attack_phase_remaining = 0.0
@@ -524,6 +581,7 @@ func _clear_attack_state() -> void:
 	_current_attack_radius = 0.0
 	_current_attack_active = 0.0
 	_current_attack_recovery = 0.0
+	_vesper_art_hit_confirmed = false
 	_attack_damaged_targets.clear()
 	_set_attack_hitbox_enabled(false)
 	_apply_debug_color()
@@ -538,8 +596,22 @@ func _get_current_attack_damage() -> float:
 		return _current_attack_damage * vesper_counter_damage_multiplier
 	if _current_attack_name == &"riposte":
 		return _current_attack_damage * riposte_damage_multiplier
+	if _current_attack_name == &"vesper_art":
+		return _current_attack_damage * vesper_art_damage_multiplier
 
 	return _current_attack_damage
+
+func _try_vesper_art_attack() -> void:
+	_try_attack(
+		&"vesper_art",
+		heavy_attack_damage,
+		heavy_attack_range,
+		heavy_attack_radius,
+		heavy_attack_stamina_cost,
+		vesper_art_windup,
+		vesper_art_active,
+		vesper_art_recovery
+	)
 
 func _try_riposte_attack() -> void:
 	var attack_name := &"vesper_counter" if parry_stock >= get_parry_stock_max() else &"riposte"
@@ -567,6 +639,21 @@ func _is_riposte_ready() -> bool:
 
 func _is_riposte_attack_name(attack_name: StringName) -> bool:
 	return attack_name == &"riposte" or attack_name == &"vesper_counter"
+
+func _is_vesper_art_attack_name(attack_name: StringName) -> bool:
+	return attack_name == &"vesper_art"
+
+func _counts_as_heavy_interrupt_attack(attack_name: StringName) -> bool:
+	return _is_riposte_attack_name(attack_name) or _is_vesper_art_attack_name(attack_name)
+
+func _can_use_vesper_art() -> bool:
+	if health.is_dead() or not _controls_enabled or _is_riposte_ready():
+		return false
+
+	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
+		_resolve_flow_tracker()
+
+	return _flow_tracker != null and _flow_tracker.can_spend(vesper_art_flow_cost)
 
 func _grant_riposte_ready() -> void:
 	parry_stock = mini(maxi(1, parry_stock + 1), get_parry_stock_max())
@@ -614,6 +701,8 @@ func _request_hit_stop_for_current_attack() -> void:
 			_hit_stop.request_hit_stop(vesper_counter_hit_stop_duration)
 		&"riposte":
 			_hit_stop.request_hit_stop(riposte_hit_stop_duration)
+		&"vesper_art":
+			_hit_stop.request_hit_stop(vesper_art_hit_stop)
 		&"heavy":
 			_hit_stop.request_heavy_attack_hit_stop()
 		_:
@@ -656,6 +745,8 @@ func _request_camera_shake_for_current_attack() -> void:
 			_camera_follow.request_shake(vesper_counter_camera_shake_strength, vesper_counter_camera_shake_duration)
 		&"riposte":
 			_camera_follow.request_shake(riposte_camera_shake_strength, riposte_camera_shake_duration)
+		&"vesper_art":
+			_camera_follow.request_shake(vesper_art_camera_shake, vesper_art_camera_shake_duration)
 		&"heavy":
 			_camera_follow.request_heavy_attack_shake()
 		_:
@@ -757,6 +848,13 @@ func _show_riposte_hit_message() -> void:
 		var message := vesper_counter_hit_message if _current_attack_name == &"vesper_counter" else riposte_hit_message
 		_combat_ui.show_temporary_message(message)
 
+func _show_vesper_art_hit_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(vesper_art_hit_message, vesper_art_message_duration)
+
 func _show_just_dodge_message() -> void:
 	if _combat_ui == null or not is_instance_valid(_combat_ui):
 		_resolve_combat_ui()
@@ -789,6 +887,8 @@ func _add_combo_from_attack_hit(target: Node) -> void:
 	if _combo_tracker != null:
 		if _current_attack_name == &"vesper_counter":
 			_combo_tracker.add_hit(1, vesper_counter_combo_extend_time)
+		elif _current_attack_name == &"vesper_art":
+			_combo_tracker.add_hit(1, vesper_art_combo_extend_time)
 		else:
 			_combo_tracker.add_hit()
 
@@ -824,6 +924,29 @@ func _add_flow_from_just_dodge() -> void:
 
 	if _flow_tracker != null:
 		_flow_tracker.add_just_dodge_flow()
+
+func _confirm_vesper_art_hit() -> void:
+	if not _controls_enabled or _vesper_art_hit_confirmed:
+		return
+
+	_vesper_art_hit_confirmed = true
+	_spend_vesper_art_flow(vesper_art_flow_cost, "VESPER ART")
+	_show_vesper_art_hit_message()
+
+func _spend_vesper_art_miss_cost_if_needed() -> void:
+	if not _is_vesper_art_attack_name(_current_attack_name) or _vesper_art_hit_confirmed:
+		return
+
+	_spend_vesper_art_flow(vesper_art_miss_flow_cost, "VESPER ART MISS")
+
+func _spend_vesper_art_flow(amount: float, reason: String) -> void:
+	if amount <= 0.0:
+		return
+	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
+		_resolve_flow_tracker()
+
+	if _flow_tracker != null:
+		_flow_tracker.lose_flow(amount, reason)
 
 func _add_flow_from_riposte_hit() -> void:
 	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
@@ -976,6 +1099,7 @@ func reset_combat_state() -> void:
 	_dodge_invulnerable_remaining = 0.0
 	_just_dodge_remaining = 0.0
 	_attack_direction = Vector3.FORWARD
+	_recent_attack_times.clear()
 	_reset_parry_reward_state()
 	_clear_attack_state()
 	_clear_parry_state()

@@ -232,11 +232,16 @@ func _update_parry_reward_labels() -> void:
 		return
 
 	parry_stock_label.text = "Parry Stock: %d/%d" % [_player.get_parry_stock(), _player.get_parry_stock_max()]
+	var player_dead := _player_health != null and _player_health.is_dead()
+	var enemy_dead := _enemy_health != null and _enemy_health.is_dead()
 	if _player.is_vesper_counter_ready():
 		riposte_status_label.text = "VESPER COUNTER READY"
 		riposte_status_label.visible = true
 	elif _player.is_riposte_ready():
 		riposte_status_label.text = "RIPOSTE READY"
+		riposte_status_label.visible = true
+	elif not player_dead and not enemy_dead and _player.is_vesper_art_ready():
+		riposte_status_label.text = _player.vesper_art_ready_message
 		riposte_status_label.visible = true
 	else:
 		riposte_status_label.visible = false

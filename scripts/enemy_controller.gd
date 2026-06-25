@@ -4,6 +4,7 @@ class_name EnemyController
 enum EnemyState { CHASE, TELEGRAPH, ACTIVE, RECOVERY, PATTERN_GAP, PATTERN_RECOVERY, STUNNED, DEAD }
 enum AttackType { FAST_SLASH, DELAYED_HEAVY, GRAB, ARMOR_SLAM, RETREAT_SLASH }
 enum AttackPattern { FAST_COMBO, GRAB_MIX, HEAVY_BAIT, SIMPLE_PRESSURE, ARMOR_CHECK, PRESSURE_INTO_SLAM, BAIT_RETREAT, SLASH_SLAM_MIX }
+enum DistanceBand { CLOSE, MID, FAR }
 
 @export var target_path: NodePath
 @export var target_group: StringName = &"player"
@@ -14,8 +15,22 @@ enum AttackPattern { FAST_COMBO, GRAB_MIX, HEAVY_BAIT, SIMPLE_PRESSURE, ARMOR_CH
 
 @export_group("Attack Selection")
 @export var attack_cooldown: float = 0.15
+@export var close_range_distance: float = 2.2
+@export var mid_range_distance: float = 2.65
+@export var far_range_distance: float = 3.05
+@export var repeat_pattern_avoid_chance: float = 0.65
+@export var repeat_pattern_weight_multiplier: float = 0.35
+@export var recent_pattern_memory_count: int = 2
+@export var anti_parry_stock_threshold: int = 2
+@export var anti_parry_grab_weight_bonus: float = 1.4
+@export var anti_parry_armor_weight_bonus: float = 1.35
+@export var anti_parry_bait_weight_bonus: float = 1.25
+@export var aggression_check_window: float = 2.0
+@export var aggression_attack_count_threshold: int = 3
+@export var anti_aggression_weight_bonus: float = 1.25
 @export var debug_log_attack_types: bool = false
 @export var debug_log_attack_patterns: bool = false
+@export var show_ai_debug_text: bool = false
 
 @export_group("Attack Patterns")
 @export var fast_combo_weight: float = 3.0
@@ -179,6 +194,9 @@ var _retreat_distance_remaining: float = 0.0
 var _pattern_steps: Array[int] = []
 var _pattern_step_index: int = 0
 var _pattern_active: bool = false
+var _last_attack_pattern: int = -1
+var _recent_attack_patterns: Array[int] = []
+var _last_ai_distance_band: int = DistanceBand.CLOSE
 var _attack_damaged_targets: Array[Node] = []
 var _just_dodged_targets: Array[Node] = []
 var _ai_enabled: bool = true
@@ -256,7 +274,8 @@ func _update_chase(delta: float) -> void:
 	_rotate_toward(direction, delta)
 
 	var distance := to_target.length()
-	if distance > _get_attack_start_range():
+	var should_approach := distance > _get_pattern_entry_range()
+	if should_approach:
 		velocity.x = direction.x * move_speed
 		velocity.z = direction.z * move_speed
 	else:
@@ -352,13 +371,12 @@ func _face_direction(direction: Vector3) -> void:
 
 func _start_attack_pattern(distance_to_target: float) -> void:
 	_current_attack_pattern = _select_attack_pattern(distance_to_target)
+	_remember_attack_pattern(_current_attack_pattern)
 	_pattern_steps = _get_pattern_steps(_current_attack_pattern)
 	_pattern_step_index = 0
 	_pattern_active = true
 
-	if debug_log_attack_patterns:
-		print("Enemy pattern: %s" % _get_attack_pattern_name(_current_attack_pattern))
-
+	_debug_log_selected_pattern()
 	_start_current_pattern_step()
 
 func _start_current_pattern_step() -> void:
@@ -806,19 +824,45 @@ func _enter_dead_state() -> void:
 	_apply_body_debug_color()
 
 func _select_attack_pattern(distance_to_target: float) -> int:
+	_last_ai_distance_band = _get_distance_band(distance_to_target)
+	var anti_parry_active := _get_target_parry_stock() >= anti_parry_stock_threshold
+	var anti_aggression_active := _is_target_attack_aggressive()
 	var options: Array[Dictionary] = []
-	_append_pattern_option(options, AttackPattern.FAST_COMBO, fast_combo_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.GRAB_MIX, grab_mix_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.HEAVY_BAIT, heavy_bait_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.SIMPLE_PRESSURE, simple_pressure_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.ARMOR_CHECK, armor_check_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.PRESSURE_INTO_SLAM, pressure_into_slam_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.BAIT_RETREAT, bait_retreat_weight, distance_to_target)
-	_append_pattern_option(options, AttackPattern.SLASH_SLAM_MIX, slash_slam_mix_weight, distance_to_target)
+
+	_append_pattern_option(options, AttackPattern.FAST_COMBO, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.GRAB_MIX, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.HEAVY_BAIT, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.SIMPLE_PRESSURE, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.ARMOR_CHECK, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.PRESSURE_INTO_SLAM, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.BAIT_RETREAT, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.SLASH_SLAM_MIX, distance_to_target, anti_parry_active, anti_aggression_active)
 
 	if options.is_empty():
-		return AttackPattern.HEAVY_BAIT
+		return _get_fallback_pattern_for_distance_band(_last_ai_distance_band)
 
+	options = _avoid_last_attack_pattern_if_possible(options)
+	return _pick_weighted_pattern(options)
+
+func _append_pattern_option(options: Array[Dictionary], pattern: int, distance_to_target: float, anti_parry_active: bool, anti_aggression_active: bool) -> void:
+	if not _is_pattern_valid_for_distance_band(pattern, _last_ai_distance_band):
+		return
+
+	var weight := _get_pattern_distance_weight(pattern, _last_ai_distance_band)
+	if weight <= 0.0:
+		return
+
+	var first_attack := _get_pattern_first_attack(pattern)
+	if distance_to_target > _get_attack_start_range_for_type(first_attack) + 0.05:
+		return
+
+	weight = _apply_pattern_weight_modifiers(pattern, weight, anti_parry_active, anti_aggression_active)
+	if weight <= 0.0:
+		return
+
+	options.append({ "pattern": pattern, "weight": weight })
+
+func _pick_weighted_pattern(options: Array[Dictionary]) -> int:
 	var total_weight := 0.0
 	for option in options:
 		total_weight += option["weight"] as float
@@ -834,15 +878,223 @@ func _select_attack_pattern(distance_to_target: float) -> int:
 
 	return options.back()["pattern"] as int
 
-func _append_pattern_option(options: Array[Dictionary], pattern: int, weight: float, distance_to_target: float) -> void:
-	if weight <= 0.0:
+func _avoid_last_attack_pattern_if_possible(options: Array[Dictionary]) -> Array[Dictionary]:
+	if options.size() <= 1 or _last_attack_pattern < 0:
+		return options
+
+	var avoid_chance := clampf(repeat_pattern_avoid_chance, 0.0, 1.0)
+	if avoid_chance <= 0.0 or randf() >= avoid_chance:
+		return options
+
+	var filtered_options: Array[Dictionary] = []
+	for option in options:
+		if (option["pattern"] as int) != _last_attack_pattern:
+			filtered_options.append(option)
+
+	return filtered_options if not filtered_options.is_empty() else options
+
+func _is_pattern_valid_for_distance_band(pattern: int, distance_band: int) -> bool:
+	match distance_band:
+		DistanceBand.CLOSE:
+			match pattern:
+				AttackPattern.FAST_COMBO, AttackPattern.GRAB_MIX, AttackPattern.SIMPLE_PRESSURE, AttackPattern.SLASH_SLAM_MIX:
+					return true
+		DistanceBand.MID:
+			match pattern:
+				AttackPattern.SIMPLE_PRESSURE, AttackPattern.HEAVY_BAIT, AttackPattern.ARMOR_CHECK, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.BAIT_RETREAT, AttackPattern.SLASH_SLAM_MIX:
+					return true
+		DistanceBand.FAR:
+			match pattern:
+				AttackPattern.HEAVY_BAIT, AttackPattern.BAIT_RETREAT:
+					return true
+
+	return false
+
+func _get_fallback_pattern_for_distance_band(distance_band: int) -> int:
+	match distance_band:
+		DistanceBand.FAR:
+			return AttackPattern.BAIT_RETREAT
+		DistanceBand.MID:
+			return AttackPattern.HEAVY_BAIT
+		_:
+			return AttackPattern.SIMPLE_PRESSURE
+
+func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
+	var base_weight := _get_pattern_base_weight(pattern)
+	match distance_band:
+		DistanceBand.CLOSE:
+			match pattern:
+				AttackPattern.FAST_COMBO:
+					return base_weight * 1.15
+				AttackPattern.GRAB_MIX:
+					return base_weight * 1.25
+				AttackPattern.SIMPLE_PRESSURE:
+					return base_weight * 1.25
+				AttackPattern.SLASH_SLAM_MIX:
+					return base_weight * 1.05
+				AttackPattern.HEAVY_BAIT:
+					return base_weight * 0.55
+				AttackPattern.ARMOR_CHECK:
+					return base_weight * 0.7
+				AttackPattern.PRESSURE_INTO_SLAM:
+					return base_weight * 0.75
+				AttackPattern.BAIT_RETREAT:
+					return base_weight * 0.45
+		DistanceBand.MID:
+			match pattern:
+				AttackPattern.HEAVY_BAIT:
+					return base_weight * 1.35
+				AttackPattern.BAIT_RETREAT:
+					return base_weight * 1.25
+				AttackPattern.PRESSURE_INTO_SLAM:
+					return base_weight * 1.25
+				AttackPattern.SLASH_SLAM_MIX:
+					return base_weight * 1.15
+				AttackPattern.ARMOR_CHECK:
+					return base_weight * 1.0
+				AttackPattern.SIMPLE_PRESSURE:
+					return base_weight * 0.8
+				AttackPattern.FAST_COMBO:
+					return base_weight * 0.65
+				AttackPattern.GRAB_MIX:
+					return base_weight * 0.45
+		DistanceBand.FAR:
+			match pattern:
+				AttackPattern.BAIT_RETREAT:
+					return base_weight * 0.35
+				AttackPattern.HEAVY_BAIT:
+					return base_weight * 0.25
+				_:
+					return 0.0
+
+	return base_weight
+
+func _get_pattern_base_weight(pattern: int) -> float:
+	match pattern:
+		AttackPattern.FAST_COMBO:
+			return fast_combo_weight
+		AttackPattern.GRAB_MIX:
+			return grab_mix_weight
+		AttackPattern.HEAVY_BAIT:
+			return heavy_bait_weight
+		AttackPattern.ARMOR_CHECK:
+			return armor_check_weight
+		AttackPattern.PRESSURE_INTO_SLAM:
+			return pressure_into_slam_weight
+		AttackPattern.BAIT_RETREAT:
+			return bait_retreat_weight
+		AttackPattern.SLASH_SLAM_MIX:
+			return slash_slam_mix_weight
+		_:
+			return simple_pressure_weight
+
+func _apply_pattern_weight_modifiers(pattern: int, weight: float, anti_parry_active: bool, anti_aggression_active: bool) -> float:
+	var modified_weight := weight * _get_pattern_memory_multiplier(pattern)
+
+	if anti_parry_active:
+		match pattern:
+			AttackPattern.GRAB_MIX:
+				modified_weight *= anti_parry_grab_weight_bonus
+			AttackPattern.ARMOR_CHECK, AttackPattern.PRESSURE_INTO_SLAM:
+				modified_weight *= anti_parry_armor_weight_bonus
+			AttackPattern.BAIT_RETREAT:
+				modified_weight *= anti_parry_bait_weight_bonus
+
+	if anti_aggression_active:
+		match pattern:
+			AttackPattern.FAST_COMBO, AttackPattern.SIMPLE_PRESSURE, AttackPattern.ARMOR_CHECK:
+				modified_weight *= anti_aggression_weight_bonus
+
+	return modified_weight
+
+func _get_pattern_memory_multiplier(pattern: int) -> float:
+	var multiplier := 1.0
+	var repeat_multiplier := maxf(0.0, repeat_pattern_weight_multiplier)
+	for recent_pattern in _recent_attack_patterns:
+		if recent_pattern == pattern:
+			multiplier *= repeat_multiplier
+
+	return multiplier
+
+func _remember_attack_pattern(pattern: int) -> void:
+	_last_attack_pattern = pattern
+	if recent_pattern_memory_count <= 0:
+		_recent_attack_patterns.clear()
 		return
 
-	var first_attack := _get_pattern_first_attack(pattern)
-	if distance_to_target > _get_attack_start_range_for_type(first_attack) + 0.05:
+	_recent_attack_patterns.push_front(pattern)
+	while _recent_attack_patterns.size() > recent_pattern_memory_count:
+		_recent_attack_patterns.pop_back()
+
+func _get_distance_band(distance_to_target: float) -> int:
+	if distance_to_target <= _get_close_range_limit():
+		return DistanceBand.CLOSE
+	if distance_to_target <= _get_mid_range_limit():
+		return DistanceBand.MID
+
+	return DistanceBand.FAR
+
+func _get_close_range_limit() -> float:
+	return maxf(0.0, close_range_distance)
+
+func _get_mid_range_limit() -> float:
+	return maxf(_get_close_range_limit(), mid_range_distance)
+
+func _get_far_range_limit() -> float:
+	return maxf(_get_mid_range_limit(), far_range_distance)
+
+func _get_pattern_entry_range() -> float:
+	return minf(_get_attack_start_range(), _get_far_range_limit())
+
+func _get_distance_band_name(distance_band: int) -> String:
+	match distance_band:
+		DistanceBand.CLOSE:
+			return "close"
+		DistanceBand.MID:
+			return "mid"
+		_:
+			return "far"
+
+func _get_target_parry_stock() -> int:
+	if _target == null or not is_instance_valid(_target):
+		return 0
+
+	if _target.has_method("get_parry_stock"):
+		return int(_target.call("get_parry_stock"))
+
+	var stock = _target.get("parry_stock")
+	if stock is int or stock is float:
+		return int(stock)
+
+	return 0
+
+func _is_target_attack_aggressive() -> bool:
+	if aggression_check_window <= 0.0 or aggression_attack_count_threshold <= 0:
+		return false
+	if _target == null or not is_instance_valid(_target) or not _target.has_method("get_recent_attack_count"):
+		return false
+
+	var attack_count := int(_target.call("get_recent_attack_count", aggression_check_window))
+	return attack_count >= aggression_attack_count_threshold
+
+func _debug_log_selected_pattern() -> void:
+	if not debug_log_attack_patterns and not show_ai_debug_text:
 		return
 
-	options.append({ "pattern": pattern, "weight": weight })
+	var tags: Array[String] = []
+	if _get_target_parry_stock() >= anti_parry_stock_threshold:
+		tags.append("anti-parry")
+	if _is_target_attack_aggressive():
+		tags.append("anti-aggression")
+
+	var context := ""
+	if not tags.is_empty():
+		var tag_text := tags[0]
+		for index in range(1, tags.size()):
+			tag_text += ", " + tags[index]
+		context = " / %s" % tag_text
+
+	print("AI: %s / %s%s" % [_get_distance_band_name(_last_ai_distance_band), _get_attack_pattern_name(_current_attack_pattern), context])
 
 func _get_pattern_steps(pattern: int) -> Array[int]:
 	var steps: Array[int] = []
@@ -1335,6 +1587,8 @@ func reset_combat_state() -> void:
 	_current_attack_telegraph_elapsed = 0.0
 	_retreat_distance_remaining = 0.0
 	_clear_attack_pattern_state()
+	_last_attack_pattern = -1
+	_recent_attack_patterns.clear()
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()
 	_set_attack_hitbox_enabled(false)
