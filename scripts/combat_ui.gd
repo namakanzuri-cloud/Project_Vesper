@@ -5,7 +5,11 @@ class_name CombatUI
 @export var enemy_group: StringName = &"enemy"
 @export var combo_tracker_group: StringName = &"combo_tracker"
 @export var flow_tracker_group: StringName = &"flow_tracker"
+@export var combat_stats_group: StringName = &"combat_stats"
 @export var temporary_message_duration: float = 0.55
+
+@export_group("Debug Display")
+@export var show_combat_debug: bool = true
 
 @export_group("Combo Display")
 @export var combo_display_scale: float = 1.0
@@ -18,32 +22,45 @@ class_name CombatUI
 @onready var flow_label: Label = $Panel/Margin/Stats/Flow
 @onready var parry_stock_label: Label = $Panel/Margin/Stats/ParryStock
 @onready var riposte_status_label: Label = $Panel/Margin/Stats/RiposteStatus
+@onready var combat_debug_panel: Control = $CombatDebugPanel
+@onready var combat_debug_label: Label = $CombatDebugPanel/Margin/DebugText
 @onready var combo_display: Control = $ComboDisplay
 @onready var combo_hit_label: Label = $ComboDisplay/HitCount
 @onready var combo_rating_label: Label = $ComboDisplay/Rating
 @onready var death_overlay: Control = $DeathOverlay
 @onready var death_title_label: Label = $DeathOverlay/Center/Box/Title
+@onready var result_summary_label: Label = $DeathOverlay/Center/Box/ResultSummary
+@onready var result_log_summary_label: Label = $DeathOverlay/Center/Box/ResultLogSummary
+@onready var copy_result_log_button: Button = $DeathOverlay/Center/Box/CopyResultLogButton
+@onready var copy_result_status_label: Label = $DeathOverlay/Center/Box/CopyResultStatus
 @onready var death_instructions_label: Label = $DeathOverlay/Center/Box/Instructions
 @onready var temporary_message_label: Label = $TemporaryMessage
 @onready var flow_popup_label: Label = $FlowPopup
 
 var _player: PlayerController
 var _player_health: Health
+var _enemy: EnemyController
 var _enemy_health: Health
 var _player_stamina: Stamina
 var _combo_tracker: ComboTracker
 var _flow_tracker: FlowTracker
+var _combat_stats
 var _temporary_message_time_remaining: float = 0.0
 var _flow_popup_time_remaining: float = 0.0
+var _last_result_json: String = ""
 
 func _ready() -> void:
+	_set_combat_debug_visible(show_combat_debug)
 	set_end_overlay_visible(false)
 	clear_temporary_message()
 	clear_flow_popup()
 	clear_combo_display()
+	if copy_result_log_button != null and not copy_result_log_button.pressed.is_connected(_on_copy_result_log_pressed):
+		copy_result_log_button.pressed.connect(_on_copy_result_log_pressed)
 	call_deferred("_bind_combatants")
 	call_deferred("_bind_combo_tracker")
 	call_deferred("_bind_flow_tracker")
+	call_deferred("_bind_combat_stats")
 
 func _process(delta: float) -> void:
 	if _player_health == null or _enemy_health == null or _player_stamina == null:
@@ -55,18 +72,36 @@ func _process(delta: float) -> void:
 	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
 		_bind_flow_tracker()
 
+	if _combat_stats == null or not is_instance_valid(_combat_stats):
+		_bind_combat_stats()
+
 	_update_labels()
+	_update_combat_debug()
 	_update_temporary_message(delta)
 	_update_flow_popup(delta)
 	_update_combo_punch(delta)
+	_handle_result_log_input()
 
-func set_end_overlay_visible(is_visible: bool, title: String = "", instructions: String = "") -> void:
+func set_end_overlay_visible(is_visible: bool, title: String = "", instructions: String = "", result_text: String = "", result_log_text: String = "", result_json: String = "") -> void:
 	if death_overlay == null:
 		return
 
 	death_overlay.visible = is_visible
 	death_title_label.text = title
 	death_instructions_label.text = instructions
+	_last_result_json = result_json if is_visible else ""
+	if result_summary_label != null:
+		result_summary_label.text = result_text
+		result_summary_label.visible = is_visible and result_text != ""
+	if result_log_summary_label != null:
+		result_log_summary_label.text = result_log_text
+		result_log_summary_label.visible = is_visible and result_log_text != ""
+	if copy_result_log_button != null:
+		copy_result_log_button.visible = is_visible
+		copy_result_log_button.disabled = _last_result_json == ""
+	if copy_result_status_label != null:
+		copy_result_status_label.text = ""
+		copy_result_status_label.visible = false
 
 func set_death_visible(is_visible: bool, title: String = "YOU DIED", instructions: String = "Press R to retry") -> void:
 	set_end_overlay_visible(is_visible, title, instructions)
@@ -108,6 +143,92 @@ func clear_combo_display() -> void:
 	combo_hit_label.text = ""
 	combo_rating_label.text = ""
 
+func _set_combat_debug_visible(is_visible: bool) -> void:
+	if combat_debug_panel != null:
+		combat_debug_panel.visible = is_visible
+
+func _update_combat_debug() -> void:
+	_set_combat_debug_visible(show_combat_debug)
+	if not show_combat_debug or combat_debug_label == null:
+		return
+
+	var lines: Array[String] = []
+	if _flow_tracker != null:
+		lines.append("Flow: %d / %d" % [int(round(_flow_tracker.current_flow)), int(round(_flow_tracker.max_flow))])
+		lines.append("Flow Last: %s" % _flow_tracker.last_flow_change_text)
+	else:
+		lines.append("Flow: -")
+		lines.append("Flow Last: -")
+
+	if _player != null and is_instance_valid(_player):
+		lines.append("Parry Stock: %d / %d (VC %d)" % [_player.get_parry_stock(), _player.get_parry_stock_max(), _player.get_vesper_counter_required_stock()])
+		lines.append("Deflect Chain: %d / Max %d" % [_player.get_deflect_chain_count(), _player.get_max_deflect_chain()])
+		lines.append("Parry Last: %s" % _player.get_last_parry_result())
+		lines.append("Riposte Ready: %s (%.2fs)" % [_format_ready(_player.is_riposte_ready()), _player.get_riposte_time_remaining()])
+		lines.append("Vesper Counter Ready: %s (%.2fs)" % [_format_ready(_player.is_vesper_counter_ready()), _player.get_vesper_counter_time_remaining()])
+		lines.append("Vesper Art Ready: %s" % _format_ready(_player.is_vesper_art_ready()))
+		lines.append("Just Dodge Counter Ready: %s (%.2fs)" % [_format_ready(_player.is_just_dodge_counter_ready()), _player.get_just_dodge_counter_time_remaining()])
+		lines.append("Just Counter Recent: %s" % _format_ready(_player.was_just_dodge_counter_recently_used()))
+	else:
+		lines.append("Parry Stock: -")
+		lines.append("Riposte Ready: -")
+		lines.append("Vesper Counter Ready: -")
+		lines.append("Vesper Art Ready: -")
+		lines.append("Just Dodge Counter Ready: -")
+		lines.append("Just Counter Recent: -")
+
+	if _enemy != null and is_instance_valid(_enemy):
+		lines.append("Enemy Pattern: %s" % _enemy.get_debug_current_pattern_name())
+		lines.append("Enemy Distance: %s" % _enemy.get_debug_distance_band())
+		lines.append("Enemy State: %s" % _enemy.get_debug_state_text())
+	else:
+		lines.append("Enemy Pattern: -")
+		lines.append("Enemy Distance: -")
+		lines.append("Enemy State: -")
+
+	if _combat_stats != null:
+		lines.append("Combat Time: %.1fs" % _combat_stats.combat_time)
+		lines.append("Damage Taken: %d / Hits %d" % [int(round(_combat_stats.damage_taken)), _combat_stats.hit_taken_count])
+		lines.append("Max Combo: %d" % _combat_stats.max_combo)
+		lines.append("P/JD/INT: %d / %d / %d" % [_combat_stats.parry_count, _combat_stats.just_dodge_count, _combat_stats.interrupt_count])
+		lines.append("Deflect/F/Max: %d / %d / %d" % [_combat_stats.deflect_count, _combat_stats.parry_fail_count, _combat_stats.max_deflect_chain])
+		lines.append("Score/Rank: %d / %s" % [int(round(_combat_stats.get_score())), _combat_stats.get_rank()])
+		lines.append("Vesper Art U/H/M: %d / %d / %d" % [_combat_stats.vesper_art_use_count, _combat_stats.vesper_art_hit_count, _combat_stats.vesper_art_miss_count])
+	else:
+		lines.append("Style: -")
+	var debug_text := ""
+	for line in lines:
+		debug_text += line + "\n"
+	combat_debug_label.text = debug_text.strip_edges()
+
+func _format_ready(is_ready: bool) -> String:
+	return "YES" if is_ready else "NO"
+
+func _handle_result_log_input() -> void:
+	if death_overlay == null or not death_overlay.visible:
+		return
+	if InputMap.has_action("copy_result_log") and Input.is_action_just_pressed("copy_result_log"):
+		copy_result_log_to_clipboard()
+
+func copy_result_log_to_clipboard() -> void:
+	if _last_result_json == "":
+		_show_result_log_status("NO RESULT LOG")
+		return
+
+	DisplayServer.clipboard_set(_last_result_json)
+	_show_result_log_status("COPIED RESULT LOG")
+
+func _show_result_log_status(message: String) -> void:
+	if copy_result_status_label == null:
+		show_temporary_message(message)
+		return
+
+	copy_result_status_label.text = message
+	copy_result_status_label.visible = true
+
+func _on_copy_result_log_pressed() -> void:
+	copy_result_log_to_clipboard()
+
 func _update_temporary_message(delta: float) -> void:
 	if _temporary_message_time_remaining <= 0.0:
 		return
@@ -140,7 +261,11 @@ func _bind_combatants() -> void:
 
 	var enemy := get_tree().get_first_node_in_group(enemy_group)
 	if enemy != null:
+		_enemy = enemy as EnemyController
 		_enemy_health = enemy.get_node_or_null("Health") as Health
+
+func _bind_combat_stats() -> void:
+	_combat_stats = get_tree().get_first_node_in_group(combat_stats_group)
 
 func _bind_combo_tracker() -> void:
 	var combo_tracker := get_tree().get_first_node_in_group(combo_tracker_group) as ComboTracker
@@ -239,6 +364,9 @@ func _update_parry_reward_labels() -> void:
 		riposte_status_label.visible = true
 	elif _player.is_riposte_ready():
 		riposte_status_label.text = "RIPOSTE READY"
+		riposte_status_label.visible = true
+	elif not player_dead and not enemy_dead and _player.is_just_dodge_counter_ready():
+		riposte_status_label.text = _player.just_dodge_counter_ready_message
 		riposte_status_label.visible = true
 	elif not player_dead and not enemy_dead and _player.is_vesper_art_ready():
 		riposte_status_label.text = _player.vesper_art_ready_message

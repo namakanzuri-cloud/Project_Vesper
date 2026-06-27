@@ -1,6 +1,8 @@
 extends CharacterBody3D
 class_name EnemyController
 
+signal interrupt_succeeded
+
 enum EnemyState { CHASE, TELEGRAPH, ACTIVE, RECOVERY, PATTERN_GAP, PATTERN_RECOVERY, STUNNED, DEAD }
 enum AttackType { FAST_SLASH, DELAYED_HEAVY, GRAB, ARMOR_SLAM, RETREAT_SLASH }
 enum AttackPattern { FAST_COMBO, GRAB_MIX, HEAVY_BAIT, SIMPLE_PRESSURE, ARMOR_CHECK, PRESSURE_INTO_SLAM, BAIT_RETREAT, SLASH_SLAM_MIX }
@@ -50,31 +52,41 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var bait_retreat_step_interval: float = 0.0
 @export var slash_slam_mix_step_interval: float = 0.18
 @export var pattern_end_recovery_time: float = 0.42
-@export var pattern_abort_distance: float = 4.2
+@export var pattern_abort_distance: float = 4.8
 
 @export_group("Fast Slash")
-@export var fast_slash_range: float = 1.35
-@export var fast_slash_radius: float = 0.68
+@export var fast_slash_range: float = 1.75
+@export var fast_slash_radius: float = 0.92
 @export var fast_slash_damage: float = 11.0
-@export var fast_slash_telegraph_time: float = 0.36
+@export var fast_slash_telegraph_time: float = 0.47
 @export var fast_slash_active_time: float = 0.12
 @export var fast_slash_recovery_time: float = 0.34
 @export var fast_slash_parryable: bool = true
+@export var fast_slash_parry_stops_enemy: bool = false
+@export var fast_slash_parry_grants_riposte: bool = false
+@export var fast_slash_is_rhythm_deflect: bool = true
+@export var fast_slash_deflect_flow_gain: float = 10.0
+@export var fast_slash_parry_flow_gain: float = 0.0
 @export var fast_slash_interruptible: bool = false
 @export var fast_slash_interrupt_window_start: float = 0.0
 @export var fast_slash_interrupt_window_end: float = 0.0
 @export var fast_slash_interrupt_requires_heavy: bool = false
 @export var fast_slash_interrupt_stun_duration: float = 0.62
-@export var fast_slash_telegraph_color: Color = Color(1.0, 0.08, 0.04, 0.42)
+@export var fast_slash_telegraph_color: Color = Color(0.08, 0.82, 1.0, 0.42)
 
 @export_group("Delayed Heavy Slash")
-@export var delayed_heavy_range: float = 1.65
-@export var delayed_heavy_radius: float = 0.92
+@export var delayed_heavy_range: float = 2.1
+@export var delayed_heavy_radius: float = 1.15
 @export var delayed_heavy_damage: float = 24.0
 @export var delayed_heavy_telegraph_time: float = 1.05
 @export var delayed_heavy_active_time: float = 0.18
 @export var delayed_heavy_recovery_time: float = 0.68
 @export var delayed_heavy_parryable: bool = true
+@export var delayed_heavy_parry_stops_enemy: bool = true
+@export var delayed_heavy_parry_grants_riposte: bool = true
+@export var delayed_heavy_is_rhythm_deflect: bool = false
+@export var delayed_heavy_deflect_flow_gain: float = 0.0
+@export var delayed_heavy_parry_flow_gain: float = 18.0
 @export var delayed_heavy_interruptible: bool = true
 @export var delayed_heavy_interrupt_window_start: float = 0.35
 @export var delayed_heavy_interrupt_window_end: float = 1.0
@@ -83,13 +95,18 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var delayed_heavy_telegraph_color: Color = Color(1.0, 0.34, 0.02, 0.5)
 
 @export_group("Grab")
-@export var grab_range: float = 1.05
-@export var grab_radius: float = 0.62
+@export var grab_range: float = 1.35
+@export var grab_radius: float = 0.82
 @export var grab_damage: float = 20.0
 @export var grab_telegraph_time: float = 0.7
 @export var grab_active_time: float = 0.18
 @export var grab_recovery_time: float = 0.56
 @export var grab_parryable: bool = false
+@export var grab_parry_stops_enemy: bool = false
+@export var grab_parry_grants_riposte: bool = false
+@export var grab_is_rhythm_deflect: bool = false
+@export var grab_deflect_flow_gain: float = 0.0
+@export var grab_parry_flow_gain: float = 0.0
 @export var grab_interruptible: bool = false
 @export var grab_interrupt_window_start: float = 0.0
 @export var grab_interrupt_window_end: float = 0.0
@@ -98,13 +115,18 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var grab_telegraph_color: Color = Color(0.7, 0.05, 1.0, 0.45)
 
 @export_group("Armor Slam")
-@export var armor_slam_range: float = 1.55
-@export var armor_slam_radius: float = 1.18
+@export var armor_slam_range: float = 1.95
+@export var armor_slam_radius: float = 1.38
 @export var armor_slam_damage: float = 32.0
 @export var armor_slam_telegraph_time: float = 1.25
 @export var armor_slam_active_time: float = 0.2
 @export var armor_slam_recovery_time: float = 0.92
 @export var armor_slam_parryable: bool = false
+@export var armor_slam_parry_stops_enemy: bool = false
+@export var armor_slam_parry_grants_riposte: bool = false
+@export var armor_slam_is_rhythm_deflect: bool = false
+@export var armor_slam_deflect_flow_gain: float = 0.0
+@export var armor_slam_parry_flow_gain: float = 0.0
 @export var armor_slam_interruptible: bool = false
 @export var armor_slam_interrupt_window_start: float = 0.0
 @export var armor_slam_interrupt_window_end: float = 0.0
@@ -119,21 +141,26 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var armor_slam_camera_shake_duration: float = 0.16
 
 @export_group("Retreat Slash")
-@export var retreat_slash_range: float = 2.35
-@export var retreat_slash_radius: float = 1.15
-@export var retreat_slash_damage: float = 14.0
-@export var retreat_slash_telegraph_time: float = 0.58
-@export var retreat_slash_active_time: float = 0.13
-@export var retreat_slash_recovery_time: float = 0.42
+@export var retreat_slash_range: float = 1.75
+@export var retreat_slash_radius: float = 0.92
+@export var retreat_slash_damage: float = 11.0
+@export var retreat_slash_telegraph_time: float = 0.47
+@export var retreat_slash_active_time: float = 0.12
+@export var retreat_slash_recovery_time: float = 0.34
 @export var retreat_slash_parryable: bool = true
+@export var retreat_slash_parry_stops_enemy: bool = false
+@export var retreat_slash_parry_grants_riposte: bool = false
+@export var retreat_slash_is_rhythm_deflect: bool = true
+@export var retreat_slash_deflect_flow_gain: float = 10.0
+@export var retreat_slash_parry_flow_gain: float = 0.0
 @export var retreat_slash_interruptible: bool = false
 @export var retreat_slash_interrupt_window_start: float = 0.0
 @export var retreat_slash_interrupt_window_end: float = 0.0
 @export var retreat_slash_interrupt_requires_heavy: bool = false
 @export var retreat_slash_interrupt_stun_duration: float = 0.62
 @export var retreat_slash_telegraph_color: Color = Color(0.08, 0.82, 1.0, 0.42)
-@export var retreat_slash_retreat_distance: float = 0.35
-@export var retreat_slash_retreat_duration: float = 0.22
+@export var retreat_slash_retreat_distance: float = 0.0
+@export var retreat_slash_retreat_duration: float = 0.0
 
 @export_group("Interrupt")
 @export var interrupt_stun_time: float = 0.62
@@ -519,6 +546,8 @@ func _strike_active_attack_targets() -> void:
 		if _get_current_attack_parryable() and target.has_method("try_parry_attack"):
 			var did_parry := target.call("try_parry_attack", self) as bool
 			if did_parry:
+				if not _attack_damaged_targets.has(target):
+					_attack_damaged_targets.append(target)
 				return
 
 		if _try_resolve_dodge_contact(target):
@@ -604,6 +633,7 @@ func receive_player_attack_hit(_attack_name: StringName, _attacker: Node) -> boo
 
 	_interrupt_current_attack(_get_current_attack_interrupt_stun_duration())
 	_add_flow_from_interrupt()
+	interrupt_succeeded.emit()
 	return true
 
 func _interrupt_current_attack(stun_duration: float) -> void:
@@ -788,6 +818,20 @@ func _show_interrupt_message() -> void:
 
 	if _combat_ui != null:
 		_combat_ui.show_temporary_message(interrupt_message, interrupt_message_duration)
+
+func receive_just_dodge_counter_stun(stun_time: float) -> void:
+	receive_parry_stun(stun_time)
+
+func get_current_parry_response() -> Dictionary:
+	return {
+		"parryable": _get_current_attack_parryable(),
+		"parry_stops_enemy": _get_current_attack_parry_stops_enemy(),
+		"parry_grants_riposte": _get_current_attack_parry_grants_riposte(),
+		"is_rhythm_deflect": _get_current_attack_is_rhythm_deflect(),
+		"deflect_flow_gain": _get_current_attack_deflect_flow_gain(),
+		"parry_flow_gain": _get_current_attack_parry_flow_gain(),
+		"attack_type": _get_attack_type_name(_current_attack_type)
+	}
 
 func receive_parry_stun(stun_time: float) -> void:
 	if health.is_dead():
@@ -1281,6 +1325,71 @@ func _get_current_attack_parryable() -> bool:
 		_:
 			return fast_slash_parryable
 
+func _get_current_attack_parry_stops_enemy() -> bool:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_parry_stops_enemy
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_parry_stops_enemy
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_parry_stops_enemy
+		AttackType.GRAB:
+			return grab_parry_stops_enemy
+		_:
+			return fast_slash_parry_stops_enemy
+
+func _get_current_attack_parry_grants_riposte() -> bool:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_parry_grants_riposte
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_parry_grants_riposte
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_parry_grants_riposte
+		AttackType.GRAB:
+			return grab_parry_grants_riposte
+		_:
+			return fast_slash_parry_grants_riposte
+
+func _get_current_attack_is_rhythm_deflect() -> bool:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_is_rhythm_deflect
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_is_rhythm_deflect
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_is_rhythm_deflect
+		AttackType.GRAB:
+			return grab_is_rhythm_deflect
+		_:
+			return fast_slash_is_rhythm_deflect
+
+func _get_current_attack_deflect_flow_gain() -> float:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_deflect_flow_gain
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_deflect_flow_gain
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_deflect_flow_gain
+		AttackType.GRAB:
+			return grab_deflect_flow_gain
+		_:
+			return fast_slash_deflect_flow_gain
+
+func _get_current_attack_parry_flow_gain() -> float:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_parry_flow_gain
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_parry_flow_gain
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_parry_flow_gain
+		AttackType.GRAB:
+			return grab_parry_flow_gain
+		_:
+			return fast_slash_parry_flow_gain
+
 func _get_current_attack_interruptible() -> bool:
 	match _current_attack_type:
 		AttackType.ARMOR_SLAM:
@@ -1559,6 +1668,48 @@ func _move_pose_node(node: Node3D, target_position: Vector3, target_rotation_deg
 
 	_pose_tween.tween_property(node, "position", target_position, duration)
 	_pose_tween.tween_property(node, "rotation_degrees", target_rotation_degrees, duration)
+
+func get_debug_current_pattern_name() -> String:
+	if not _pattern_active and _state == EnemyState.CHASE:
+		return "None"
+
+	return _get_attack_pattern_name(_current_attack_pattern)
+
+func get_debug_distance_band() -> String:
+	var distance_band := _last_ai_distance_band
+	var to_target := _get_flat_to_target()
+	if to_target.length_squared() > 0.001:
+		distance_band = _get_distance_band(to_target.length())
+
+	return _get_distance_band_name(distance_band).to_upper()
+
+func get_debug_state_text() -> String:
+	var state_text := _get_enemy_state_name(_state)
+	if _state == EnemyState.TELEGRAPH or _state == EnemyState.ACTIVE or _state == EnemyState.RECOVERY:
+		state_text += " / " + _get_attack_type_name(_current_attack_type)
+	if _pattern_active:
+		state_text += " / Step %d/%d" % [mini(_pattern_step_index + 1, _pattern_steps.size()), _pattern_steps.size()]
+
+	return state_text
+
+func _get_enemy_state_name(state: int) -> String:
+	match state:
+		EnemyState.TELEGRAPH:
+			return "Telegraph"
+		EnemyState.ACTIVE:
+			return "Active"
+		EnemyState.RECOVERY:
+			return "Recovery"
+		EnemyState.PATTERN_GAP:
+			return "Pattern Gap"
+		EnemyState.PATTERN_RECOVERY:
+			return "Pattern Recovery"
+		EnemyState.STUNNED:
+			return "Stunned"
+		EnemyState.DEAD:
+			return "Dead"
+		_:
+			return "Chase"
 
 func set_ai_enabled(value: bool) -> void:
 	_ai_enabled = value

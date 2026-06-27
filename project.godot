@@ -56,6 +56,10 @@ light_attack={
 "deadzone": 0.5,
 "events": []
 }
+copy_result_log={
+"deadzone": 0.5,
+"events": []
+}
 heavy_attack={
 "deadzone": 0.5,
 "events": []

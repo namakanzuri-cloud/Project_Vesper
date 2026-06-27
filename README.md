@@ -36,8 +36,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 回避開始直後、敵攻撃 active 中の危険範囲で成立するジャスト回避
 - `E` パリィ（短い受付時間 / 後隙）
 - 左クリック通常攻撃（短い予備動作 / 攻撃判定 / 後隙）
-- 右クリック強攻撃（長い予備動作 / 攻撃判定 / 後隙、高ダメージ）
-- Flow満タン時、通常状態で右クリック強攻撃を押すと `VESPER ART` を発動できる
+- Right click is reserved for Riposte / Vesper Counter / Vesper Art; basic heavy attack is disabled.
 - `VESPER ART` はFlowを消費する高威力の一撃
 - Riposte / Vesper Counter の受付中は、Flow満タンでもそちらが優先される
 - Vesper Art命中時に強いヒットストップ、カメラ揺れ、簡易VFX、`VESPER ART!` 表示が出る
@@ -55,7 +54,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵の遅延重斬り（長い予兆 / 高めダメージ / パリィ可能 / 指定された予兆時間帯だけ差し込み中断可能）
 - 敵の掴み（近距離 / 中〜高ダメージ / パリィ不可 / 中断不可 / 回避や距離取りで対応）
 - 敵のアーマー叩きつけ（長い予兆 / 高ダメージ / パリィ不可 / 中断不可 / 回避後に反撃しやすい長めの後隙）
-- 敵の後退フェイント攻撃（攻撃前に少し後退 / 短めの斬り / パリィ可能 / 中断不可）
+- Blue telegraph slash: same Deflect-style attack family as fast slash, with matched timing and no retreat movement
 - 攻撃タイプごとの中断可否、差し込み可能時間帯、強攻撃要求、スタン時間の調整
 - 敵攻撃シーケンス / コンボパターン Phase 2
 - Fast Combo: 速い斬り → 速い斬り → 速い斬り → 遅延重斬り
@@ -64,54 +63,73 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Simple Pressure: 速い斬り → 速い斬り
 - Armor Check: アーマー叩きつけ
 - Pressure into Slam: 速い斬り → 速い斬り → アーマー叩きつけ
-- Bait Retreat: 後退フェイント攻撃
+- Bait Retreat: blue Deflect slash timing variant
 - Slash Slam Mix: 速い斬り → アーマー叩きつけ
 - 攻撃タイプごとの床予兆の色・サイズによる補助表示
 - 遅延重斬りの予兆中、設定された中断可能時間帯にプレイヤー攻撃を当てると `INTERRUPT!` 表示と短時間スタン
 - 速い斬り、掴み、アーマー叩きつけ、後退フェイント攻撃は差し込み中断不可
-- 速い斬り、遅延重斬り、後退フェイント攻撃の active 中にパリィすると、ダメージを無効化して敵を短時間スタン
+- Fast slash and retreat-slash-colored attacks now use the same Deflect-style parry response; delayed heavy still stops the enemy and grants Riposte Ready.
 - 掴みとアーマー叩きつけはパリィ active 中でも成功扱いにせず、命中時は通常被弾として扱う
-- 通常攻撃、強攻撃、敵攻撃の命中時ヒットストップ
-- 通常攻撃、強攻撃、敵攻撃の命中時カメラ揺れ
-- 通常攻撃、強攻撃、敵攻撃の命中時簡易VFX
+- Normal attacks, Riposte / Vesper Art, and enemy attacks use hit stop
+- Normal attacks, Riposte / Vesper Art, and enemy attacks use camera shake
+- Normal attacks, Riposte / Vesper Art, and enemy attacks use simple VFX
 - パリィ成功時の強めのヒットストップ、カメラ揺れ、簡易VFX、`PARRY!` 表示
 - ジャスト回避成功時の軽いヒットストップ、カメラ揺れ、専用簡易VFX、`JUST DODGE!` 表示
 - ジャスト回避成功時のコンボ加算 / コンボタイマー延長
 - パリィ成功で `Parry Stock` が増え、最大3まで蓄積
-- パリィ成功後、短時間だけ右クリック強攻撃が `RIPOSTE READY` 状態の専用反撃になる
+- Right click is reserved for Riposte / Vesper Counter / Vesper Art; basic heavy attack is disabled.
 - `Parry Stock` 最大時の Riposte は `VESPER COUNTER` になり、より高いダメージと強い演出を出す
 - Riposte / Vesper Counter 命中時に Flow、コンボ、ヒットストップ、カメラ揺れ、簡易VFXが強化される
-- パリィ成功、ジャスト回避成功、差し込み中断成功、Riposte / Vesper Counter 命中で増え、被弾で減るFlowの簡易表示
+- `Just Dodge Counter`: ジャスト回避成功後、短時間だけ左クリックで専用カウンター攻撃を出せる
+- `Just Dodge Counter` は通常攻撃より強く、Riposte / Vesper Counter より控えめな反撃として機能する
+- `Just Dodge Counter` 命中時に Flow、コンボ、ヒットストップ、カメラ揺れ、簡易VFXが発生する
+- Flow increases from successful actions and no longer decreases from taking damage.
 - 攻撃命中とパリィ成功で増えるコンボ表示（`GOOD` / `STYLISH` / `VESPER` の簡易評価）
 - HP / スタミナの簡易HUD
 - プレイヤー死亡時の死亡表示
 - 敵HP0時の勝利表示
+- 勝利時に Clear Time、Damage Taken、Hit Taken、Max Combo、Parry Count、Just Dodge Count、Interrupt Count などをまとめた簡易リザルトを表示する
+- 勝利/死亡時に直近戦闘結果ログを JSON 形式で生成し、画面の `Copy Result Log` ボタンまたは `F9` でクリップボードへコピーできる
+- Result JSON には Rank、Score、Clear Time、Damage Taken、Max Combo、Parry Count、Just Dodge Count、Interrupt Count、Vesper Art Hit などが含まれ、テストプレイ結果を共有・分析しやすい
+- 戦闘内容に応じて `D` / `C` / `B` / `A` / `S` / `VESPER` のスタイルランクを表示する
+- Flow、Riposte / Vesper Counter、Just Dodge Counter、Vesper Art などの成功行動がリザルト評価に反映される
 - リトライとデバッグリセット
 
-## ファイル構成
+## Rhythm Parry / Light Attack Deflect Phase 1
 
-- `project.godot`: Godot プロジェクト設定
-- `DEV_GUIDELINES.md`: 開発方針と作業ルール
-- `scenes/Main.tscn`: メイン実行シーン
-- `scenes/Player.tscn`: プレイヤーシーン
-- `scenes/Enemy.tscn`: 敵シーン
-- `scenes/UI.tscn`: HUD / 死亡・勝利表示シーン
-- `scenes/HitVfx.tscn`: 命中時の簡易VFXシーン
-- `scripts/main.gd`: 戦闘全体のリセット管理
-- `scripts/player_controller.gd`: プレイヤー操作
-- `scripts/enemy_controller.gd`: 敵AI
-- `scripts/health.gd`: HP管理
-- `scripts/stamina.gd`: スタミナ管理
-- `scripts/camera_follow.gd`: カメラ追従
-- `scripts/combat_hitbox.gd`: 攻撃判定
-- `scripts/combo_tracker.gd`: コンボ管理
-- `scripts/flow_tracker.gd`: Flow管理
-- `scripts/hit_stop.gd`: 命中時の短時間スロー制御
-- `scripts/hit_vfx.gd`: 命中時の簡易VFX
-- `scripts/combat_ui.gd`: HUD表示
-- `scripts/input_setup.gd`: 入力のデフォルト設定
+- Some fast/light enemy attacks now resolve as `DEFLECT` on parry success instead of stopping the enemy.
+- Deflect success clears player parry recovery/cooldown immediately, so repeated parries can chain.
+- Deflect grants Flow, and chained Deflects add a small Flow bonus.
+- Delayed heavy still uses normal parry behavior: enemy stun, Riposte Ready, and Parry Stock.
+- Fast/light Deflect attacks use one blue telegraph language, shared timing, and shared parry response for a steadier rhythm.
+- Grab and armor slam remain non-parry success cases.
+- Parry whiffs now enter a short vulnerable recovery.
+- Result / Run Log JSON now includes `rhythmParryCount`, `deflectCount`, `maxDeflectChain`, and `parryFailCount`.
 
-## 実行方法
+## File Structure
+
+- `project.godot`: Godot project settings
+- `DEV_GUIDELINES.md`: development rules and project guidelines
+- `scenes/Main.tscn`: main runnable scene
+- `scenes/Player.tscn`: player scene
+- `scenes/Enemy.tscn`: enemy scene
+- `scenes/UI.tscn`: HUD / victory / death overlay scene
+- `scenes/HitVfx.tscn`: simple hit VFX scene
+- `scripts/main.gd`: combat reset and result flow
+- `scripts/player_controller.gd`: player input and combat actions
+- `scripts/enemy_controller.gd`: enemy AI and attack patterns
+- `scripts/health.gd`: HP management
+- `scripts/stamina.gd`: stamina management
+- `scripts/camera_follow.gd`: camera follow / shake
+- `scripts/combat_hitbox.gd`: shape-based hit detection
+- `scripts/combo_tracker.gd`: combo tracking
+- `scripts/flow_tracker.gd`: Flow management
+- `scripts/combat_stats.gd`: combat stats / style rank evaluation
+- `scripts/hit_stop.gd`: short hit-stop control
+- `scripts/hit_vfx.gd`: simple hit VFX logic
+- `scripts/combat_ui.gd`: HUD and debug display
+- `scripts/input_setup.gd`: default input setup
+
 
 1. Godot 4.7 でこのフォルダを開く。
 2. `scenes/Main.tscn` を開く。
@@ -125,9 +143,11 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - `Space`: 回避ダッシュ（敵攻撃 active 中に紙一重で避けるとジャスト回避が発生）
 - `E`: パリィ
 - 左クリック: 通常攻撃
-- 右クリック: 強攻撃（Flow満タンかつRiposte受付外では `VESPER ART`）
+- Right click: Riposte / Vesper Counter when ready, otherwise `VESPER ART` when Flow is full
 - `R`: 死亡後・勝利後リトライ
 - `F5`: いつでもデバッグリセット
+- `Copy Result Log` ボタン: 直近の戦闘結果JSONをクリップボードへコピー
+- `F9`: リザルト表示中に直近の戦闘結果JSONをコピー
 
 入力アクションは `project.godot` の Input Map で管理します。
 `project.godot` 側にイベントが未設定の場合でも、`scripts/input_setup.gd` が実行時にデフォルト入力を補います。
@@ -145,14 +165,14 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 複雑な行動ツリー、状況判断AI、攻撃パターンの外部データ化は未実装です。
 - 突進攻撃、範囲攻撃は未実装です。
 - ジャスト回避は実装済みですが、現状は敵攻撃判定の球形範囲と近接マージンを使った仮判定です。正式な武器軌跡やアニメーション連動判定はまだありません。
-- Flowは成功行動で増え、Vesper Artで消費できる戦闘資源になっています。リザルト評価にはまだ影響しません。
-- ジャスト回避後の専用カウンター攻撃、正式な回避演出は未実装です。
+- Flowは成功行動で増え、Vesper Artで消費できる戦闘資源です。勝利時の簡易リザルト評価にも反映されます。
+- `Just Dodge Counter` は実装済みです。正式な回避演出 / 専用アニメーションは未実装で、既存VFX流用の仮演出です。
 - Riposte / Vesper Counter は実装済みですが、正式アニメーションや専用モデルは未実装で、プリミティブ表示と簡易VFXによる仮演出です。
 - コンボは現状、表示のみで、ダメージ倍率やスコアには影響しません。
 - Vesper Artは仮演出で、正式アニメーションや正式VFXは未実装です。
-- Flow消費アクションは仮調整で、正式な必殺技・カットイン・リザルト評価にはまだ未対応です。
-- 死亡時や勝利時はプロトタイプ状態をリセットするだけで、タイトルやリザルト画面への遷移はありません。
-- 勝利表示は検証用の仮表示です。正式な勝利演出やリザルト画面はまだありません。
+- Flow消費アクションとリザルト評価は仮調整です。正式な必殺技、カットイン、報酬計算はまだ未対応です。
+- 死亡時や勝利時はプロトタイプ状態をリセットするだけで、タイトル画面への遷移はありません。
+- 勝利/死亡表示、簡易リザルト、Result JSONコピーは検証用の仮表示です。正式な勝利演出や専用リザルト画面遷移はまだありません。
 - 向きガイド表示は仮モデル期間のデバッグ用です。正式モデルが入ったら削除予定です。
 - カメラ揺れと命中時VFXは仮調整です。VFXは標準ノードだけの簡易表現で、正式素材や本格的なパーティクルはまだありません。
 
@@ -162,8 +182,6 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - ただし、削除・移動はユーザー確認後に行う。
 
 ## 次の実装優先順位:
-1. Riposte / Vesper Counter / Vesper Art のバランス調整
-2. ジャスト回避後の専用カウンター案
-3. Flowとリザルト評価 / スタイルランク案
-4. 攻撃パターンの追加調整
-5. 敵AIの追加調整
+1. 攻撃パターンの追加調整
+2. 敵AIの追加調整
+3. リザルト評価の調整 / 専用UI検討

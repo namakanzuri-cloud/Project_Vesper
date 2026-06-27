@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/Enemy.tscn" id="2_enemy"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://scripts/main.gd" id="6_main"]
 [ext_resource type="Script" path="res://scripts/hit_stop.gd" id="7_hit_stop"]
 [ext_resource type="Script" path="res://scripts/combo_tracker.gd" id="8_combo"]
+[ext_resource type="Script" path="res://scripts/combat_stats.gd" id="10_stats"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -40,6 +41,9 @@ script = ExtResource("8_combo")
 
 [node name="FlowTracker" type="Node" parent="." groups=["flow_tracker"]]
 script = ExtResource("9_flow")
+
+[node name="CombatStats" type="Node" parent="." groups=["combat_stats"]]
+script = ExtResource("10_stats")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")

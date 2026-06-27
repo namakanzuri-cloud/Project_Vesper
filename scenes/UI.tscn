@@ -41,6 +41,23 @@ visible = false
 text = "RIPOSTE READY"
 theme_override_colors/font_color = Color(1, 0.88, 0.28, 1)
 
+[node name="CombatDebugPanel" type="PanelContainer" parent="."]
+offset_left = 12.0
+offset_top = 190.0
+offset_right = 390.0
+offset_bottom = 520.0
+
+[node name="Margin" type="MarginContainer" parent="CombatDebugPanel"]
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="DebugText" type="Label" parent="CombatDebugPanel/Margin"]
+text = "Combat Debug"
+theme_override_colors/font_color = Color(0.86, 0.94, 1, 1)
+theme_override_font_sizes/font_size = 13
+
 [node name="ComboDisplay" type="VBoxContainer" parent="."]
 visible = false
 anchor_left = 0.62
@@ -135,6 +152,38 @@ alignment = 1
 text = "YOU DIED"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 42
+
+[node name="ResultSummary" type="Label" parent="DeathOverlay/Center/Box"]
+visible = false
+text = "RESULT"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.86, 0.94, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 18
+
+[node name="ResultLogSummary" type="Label" parent="DeathOverlay/Center/Box"]
+visible = false
+text = "RUN LOG READY"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.72, 1, 0.86, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 16
+
+[node name="CopyResultLogButton" type="Button" parent="DeathOverlay/Center/Box"]
+visible = false
+text = "Copy Result Log"
+focus_mode = 0
+
+[node name="CopyResultStatus" type="Label" parent="DeathOverlay/Center/Box"]
+visible = false
+text = "COPIED RESULT LOG"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.88, 0.28, 1)
+theme_override_font_sizes/font_size = 14
 
 [node name="Instructions" type="Label" parent="DeathOverlay/Center/Box"]
 text = "Press R to retry  |  F5 resets anytime"

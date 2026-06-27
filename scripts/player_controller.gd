@@ -1,6 +1,19 @@
 extends CharacterBody3D
 class_name PlayerController
 
+signal damage_taken(amount: float)
+signal parry_succeeded
+signal normal_parry_succeeded
+signal rhythm_deflect_succeeded(chain_count: int)
+signal parry_failed
+signal just_dodge_succeeded
+signal riposte_hit
+signal vesper_counter_hit
+signal just_dodge_counter_hit
+signal vesper_art_used
+signal vesper_art_hit
+signal vesper_art_missed
+
 enum AttackPhase { NONE, WINDUP, ACTIVE, RECOVERY }
 enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 
@@ -26,16 +39,45 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export var just_dodge_message: String = "JUST DODGE!"
 @export var just_dodge_message_duration: float = 0.55
 
+@export_group("Just Dodge Counter")
+@export var just_dodge_counter_window: float = 0.6
+@export var just_dodge_counter_damage_multiplier: float = 1.5
+@export var just_dodge_counter_flow_gain: float = 10.0
+@export var just_dodge_counter_enemy_stun_time: float = 0.32
+@export var just_dodge_counter_stamina_cost: float = 0.0
+@export var just_dodge_counter_windup: float = 0.10
+@export var just_dodge_counter_active: float = 0.14
+@export var just_dodge_counter_recovery: float = 0.24
+@export var just_dodge_counter_hit_stop_duration: float = 0.09
+@export var just_dodge_counter_camera_shake_strength: float = 0.13
+@export var just_dodge_counter_camera_shake_duration: float = 0.10
+@export var just_dodge_counter_vfx_scale: float = 1.18
+@export var just_dodge_counter_ready_message: String = "JUST COUNTER READY"
+@export var just_dodge_counter_hit_message: String = "JUST COUNTER!"
+@export var just_dodge_counter_message_duration: float = 0.55
+@export var just_dodge_counter_recent_display_time: float = 0.75
+
 @export_group("Parry")
 @export var parry_startup_time: float = 0.08
 @export var parry_active_time: float = 0.18
 @export var parry_recovery_time: float = 0.32
+@export var parry_fail_recovery_time: float = 0.42
 @export var parry_success_recovery_time: float = 0.05
 @export var parry_stamina_cost: float = 12.0
 @export var parry_success_stun_time: float = 0.78
 @export_range(0.0, 1.0, 0.05) var parry_startup_move_speed_multiplier: float = 0.15
 @export_range(0.0, 1.0, 0.05) var parry_active_move_speed_multiplier: float = 0.0
 @export_range(0.0, 1.0, 0.05) var parry_recovery_move_speed_multiplier: float = 0.25
+
+@export_group("Rhythm Deflect")
+@export var deflect_success_recovery_time: float = 0.0
+@export var deflect_chain_timeout: float = 1.0
+@export var deflect_message: String = "DEFLECT!"
+@export var deflect_message_duration: float = 0.42
+@export var deflect_hit_stop_duration: float = 0.045
+@export var deflect_shake_strength: float = 0.07
+@export var deflect_shake_duration: float = 0.06
+@export var deflect_hit_vfx_scale: float = 0.85
 
 @export_group("Light Attack")
 @export var light_attack_damage: float = 18.0
@@ -79,6 +121,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export var riposte_ready_ring_color: Color = Color(0.45, 1.0, 0.78, 0.52)
 @export var vesper_ready_body_color: Color = Color(1.0, 0.86, 0.28, 1.0)
 @export var vesper_ready_ring_color: Color = Color(1.0, 0.86, 0.28, 0.62)
+@export var just_dodge_counter_ready_body_color: Color = Color(0.5, 1.0, 0.7, 1.0)
 
 @export_group("Collision")
 @export_flags_3d_physics var enemy_collision_mask: int = 4
@@ -107,11 +150,10 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 
 @export_group("Riposte")
 @export var parry_stock_max: int = 3
-@export var riposte_window: float = 1.2
-@export var riposte_damage_multiplier: float = 1.35
-@export var vesper_counter_damage_multiplier: float = 2.0
-@export var riposte_flow_gain: float = 10.0
-@export var vesper_counter_flow_gain: float = 25.0
+@export var vesper_counter_required_parry_stock: int = 3
+@export var riposte_window: float = 1.1
+@export var riposte_damage_multiplier: float = 1.4
+@export var vesper_counter_damage_multiplier: float = 2.1
 @export var riposte_windup: float = 0.18
 @export var riposte_active: float = 0.16
 @export var riposte_recovery: float = 0.28
@@ -135,7 +177,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export_group("Vesper Art")
 @export var vesper_art_flow_cost: float = 100.0
 @export var vesper_art_damage_multiplier: float = 2.5
-@export var vesper_art_miss_flow_cost: float = 50.0
+@export var vesper_art_miss_flow_cost: float = 75.0
 @export var vesper_art_windup: float = 0.32
 @export var vesper_art_active: float = 0.22
 @export var vesper_art_recovery: float = 0.42
@@ -166,6 +208,8 @@ var _dodge_direction: Vector3 = Vector3.ZERO
 var _dodge_remaining: float = 0.0
 var _dodge_invulnerable_remaining: float = 0.0
 var _just_dodge_remaining: float = 0.0
+var _just_dodge_counter_time_remaining: float = 0.0
+var _just_dodge_counter_recent_time_remaining: float = 0.0
 var _attack_phase: int = AttackPhase.NONE
 var _attack_phase_remaining: float = 0.0
 var _current_attack_name: StringName = &""
@@ -191,6 +235,13 @@ var _flow_tracker: FlowTracker
 var parry_stock: int = 0
 var _riposte_time_remaining: float = 0.0
 var _last_health_value: float = 0.0
+var _deflect_chain_count: int = 0
+var _max_deflect_chain: int = 0
+var _deflect_chain_time_remaining: float = 0.0
+var _deflect_count: int = 0
+var _normal_parry_count: int = 0
+var _parry_fail_count: int = 0
+var _last_parry_result: String = "None"
 
 func _ready() -> void:
 	_last_health_value = health.current_health
@@ -209,6 +260,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_update_riposte_ready(delta)
+	_update_just_dodge_counter_ready(delta)
+	_update_deflect_chain(delta)
 	if health.is_dead() or not _controls_enabled:
 		velocity = Vector3.ZERO
 		move_and_slide()
@@ -249,16 +302,19 @@ func _handle_actions() -> void:
 		_try_parry()
 
 	if Input.is_action_just_pressed("light_attack"):
-		_try_attack(
-			&"light",
-			light_attack_damage,
-			light_attack_range,
-			light_attack_radius,
-			light_attack_stamina_cost,
-			light_attack_windup,
-			light_attack_active,
-			light_attack_recovery
-		)
+		if _is_just_dodge_counter_ready():
+			_try_just_dodge_counter_attack()
+		else:
+			_try_attack(
+				&"light",
+				light_attack_damage,
+				light_attack_range,
+				light_attack_radius,
+				light_attack_stamina_cost,
+				light_attack_windup,
+				light_attack_active,
+				light_attack_recovery
+			)
 
 	if Input.is_action_just_pressed("heavy_attack"):
 		_handle_heavy_attack()
@@ -268,17 +324,18 @@ func _handle_heavy_attack() -> void:
 		_try_riposte_attack()
 	elif _can_use_vesper_art():
 		_try_vesper_art_attack()
-	else:
-		_try_attack(
-			&"heavy",
-			heavy_attack_damage,
-			heavy_attack_range,
-			heavy_attack_radius,
-			heavy_attack_stamina_cost,
-			heavy_attack_windup,
-			heavy_attack_active,
-			heavy_attack_recovery
-		)
+	# Basic heavy attack is intentionally disabled so heavy input is reserved for Riposte / Vesper Art.
+
+func _update_just_dodge_counter_ready(delta: float) -> void:
+	var was_ready := _is_just_dodge_counter_ready()
+	if _just_dodge_counter_time_remaining > 0.0:
+		_just_dodge_counter_time_remaining = maxf(0.0, _just_dodge_counter_time_remaining - delta)
+
+	if _just_dodge_counter_recent_time_remaining > 0.0:
+		_just_dodge_counter_recent_time_remaining = maxf(0.0, _just_dodge_counter_recent_time_remaining - delta)
+
+	if was_ready and not _is_just_dodge_counter_ready():
+		_apply_debug_color()
 
 func _update_attack_state(delta: float) -> void:
 	if not _is_attacking():
@@ -328,7 +385,7 @@ func _advance_parry_phase() -> void:
 		ParryPhase.STARTUP:
 			_enter_parry_phase(ParryPhase.ACTIVE, parry_active_time)
 		ParryPhase.ACTIVE:
-			_enter_parry_phase(ParryPhase.RECOVERY, parry_recovery_time)
+			_on_parry_failed()
 		ParryPhase.RECOVERY:
 			_clear_parry_state()
 		_:
@@ -362,6 +419,7 @@ func _try_dodge() -> void:
 	if _is_attacking() or _is_parrying() or _dodge_remaining > 0.0 or not stamina.try_spend(dodge_stamina_cost):
 		return
 
+	_clear_just_dodge_counter_ready()
 	_dodge_direction = _move_direction if _move_direction.length_squared() > 0.001 else _last_facing
 	_dodge_direction = _dodge_direction.normalized()
 	_dodge_remaining = dodge_duration
@@ -372,6 +430,7 @@ func _try_parry() -> void:
 	if _is_attacking() or _is_parrying() or _dodge_remaining > 0.0 or not stamina.try_spend(parry_stamina_cost):
 		return
 
+	_clear_just_dodge_counter_ready()
 	_last_facing = _get_locked_attack_direction()
 	rotation.y = atan2(-_last_facing.x, -_last_facing.z)
 	_enter_parry_phase(ParryPhase.STARTUP, parry_startup_time)
@@ -395,6 +454,8 @@ func _try_attack(attack_name: StringName, damage: float, attack_range: float, at
 	_record_attack_start()
 
 	_enter_attack_phase(AttackPhase.WINDUP, windup)
+	if attack_name != &"just_dodge_counter":
+		_clear_just_dodge_counter_ready()
 	if active <= 0.0 and windup <= 0.0 and recovery <= 0.0:
 		_clear_attack_state()
 
@@ -418,7 +479,7 @@ func try_parry_attack(attacker: Node) -> bool:
 	if not is_parry_active():
 		return false
 
-	_on_parry_success(attacker)
+	_on_parry_success(attacker, _get_parry_response(attacker))
 	return true
 
 func try_just_dodge_attack(attacker: Node, impact_position: Vector3 = Vector3.ZERO) -> bool:
@@ -441,16 +502,55 @@ func is_riposte_ready() -> bool:
 	return _is_riposte_ready()
 
 func is_vesper_counter_ready() -> bool:
-	return _is_riposte_ready() and parry_stock >= get_parry_stock_max()
+	return _is_riposte_ready() and parry_stock >= get_vesper_counter_required_stock()
 
 func is_vesper_art_ready() -> bool:
 	return _can_use_vesper_art()
+
+func is_just_dodge_counter_ready() -> bool:
+	return _is_just_dodge_counter_ready()
+
+func get_just_dodge_counter_time_remaining() -> float:
+	return _just_dodge_counter_time_remaining if _is_just_dodge_counter_ready() else 0.0
+
+func was_just_dodge_counter_recently_used() -> bool:
+	return _just_dodge_counter_recent_time_remaining > 0.0
 
 func get_parry_stock() -> int:
 	return parry_stock
 
 func get_parry_stock_max() -> int:
 	return maxi(1, parry_stock_max)
+
+func get_vesper_counter_required_stock() -> int:
+	return clampi(vesper_counter_required_parry_stock, 1, get_parry_stock_max())
+
+func get_riposte_time_remaining() -> float:
+	return _riposte_time_remaining if is_riposte_ready() else 0.0
+
+func get_vesper_counter_time_remaining() -> float:
+	return _riposte_time_remaining if is_vesper_counter_ready() else 0.0
+
+func get_vesper_art_flow_cost() -> float:
+	return vesper_art_flow_cost
+
+func get_deflect_chain_count() -> int:
+	return _deflect_chain_count
+
+func get_max_deflect_chain() -> int:
+	return _max_deflect_chain
+
+func get_deflect_count() -> int:
+	return _deflect_count
+
+func get_normal_parry_count() -> int:
+	return _normal_parry_count
+
+func get_parry_fail_count() -> int:
+	return _parry_fail_count
+
+func get_last_parry_result() -> String:
+	return _last_parry_result
 
 func get_recent_attack_count(window_seconds: float) -> int:
 	var now := Time.get_ticks_msec() / 1000.0
@@ -466,35 +566,81 @@ func get_recent_attack_count(window_seconds: float) -> int:
 
 func _on_health_changed(current_health: float, _max_health: float) -> void:
 	if current_health < _last_health_value:
+		damage_taken.emit(_last_health_value - current_health)
 		_reset_parry_reward_state()
+		_reset_deflect_state()
+		_clear_just_dodge_counter_ready()
 
 	_last_health_value = current_health
 
-func _on_parry_success(attacker: Node) -> void:
-	if attacker != null and attacker.has_method("receive_parry_stun"):
+func _on_parry_success(attacker: Node, parry_response: Dictionary) -> void:
+	var stops_enemy := bool(parry_response.get("parry_stops_enemy", true))
+	var is_deflect := bool(parry_response.get("is_rhythm_deflect", false)) or not stops_enemy
+	if is_deflect:
+		_on_rhythm_deflect_success(attacker, parry_response)
+	else:
+		_on_normal_parry_success(attacker, parry_response)
+
+func _on_normal_parry_success(attacker: Node, parry_response: Dictionary) -> void:
+	var stops_enemy := bool(parry_response.get("parry_stops_enemy", true))
+	var grants_riposte := bool(parry_response.get("parry_grants_riposte", true))
+	if stops_enemy and attacker != null and attacker.has_method("receive_parry_stun"):
 		attacker.call("receive_parry_stun", parry_success_stun_time)
 
+	_last_parry_result = "PARRY"
+	_normal_parry_count += 1
+	_reset_current_deflect_chain()
 	_request_parry_hit_stop()
 	_request_parry_camera_shake()
 	_spawn_parry_vfx(attacker)
 	_show_parry_message()
-	_grant_riposte_ready()
+	if grants_riposte:
+		_grant_riposte_ready()
 	_add_combo_from_parry()
-	_add_flow_from_parry()
+	_add_flow_from_parry(float(parry_response.get("parry_flow_gain", 0.0)))
+	normal_parry_succeeded.emit()
+	parry_succeeded.emit()
 
 	if parry_success_recovery_time > 0.0:
 		_enter_parry_phase(ParryPhase.RECOVERY, parry_success_recovery_time)
 	else:
 		_clear_parry_state()
 
+func _on_rhythm_deflect_success(attacker: Node, parry_response: Dictionary) -> void:
+	_register_deflect_chain()
+	_last_parry_result = "DEFLECT x%d" % _deflect_chain_count
+	_deflect_count += 1
+	_request_deflect_hit_stop()
+	_request_deflect_camera_shake()
+	_spawn_parry_vfx(attacker, deflect_hit_vfx_scale)
+	_show_deflect_message()
+	_add_combo_from_parry()
+	_add_flow_from_deflect(float(parry_response.get("deflect_flow_gain", 0.0)))
+	rhythm_deflect_succeeded.emit(_deflect_chain_count)
+	parry_succeeded.emit()
+
+	if deflect_success_recovery_time > 0.0:
+		_enter_parry_phase(ParryPhase.RECOVERY, deflect_success_recovery_time)
+	else:
+		_clear_parry_state()
+
+func _on_parry_failed() -> void:
+	_last_parry_result = "FAIL"
+	_parry_fail_count += 1
+	_reset_current_deflect_chain()
+	parry_failed.emit()
+	_enter_parry_phase(ParryPhase.RECOVERY, parry_fail_recovery_time)
+
 func _on_just_dodge_success(attacker: Node, impact_position: Vector3) -> void:
 	_just_dodge_remaining = 0.0
+	_grant_just_dodge_counter_ready()
 	_request_just_dodge_hit_stop()
 	_request_just_dodge_camera_shake()
 	_spawn_just_dodge_vfx(impact_position)
 	_show_just_dodge_message()
 	_add_combo_from_just_dodge()
 	_add_flow_from_just_dodge()
+	just_dodge_succeeded.emit()
 
 func _strike_active_attack_targets() -> void:
 	attack_hitbox.global_position = global_position + _attack_direction * _current_attack_range
@@ -508,6 +654,13 @@ func _strike_active_attack_targets() -> void:
 	if not damaged.is_empty() and _is_riposte_attack_name(_current_attack_name):
 		_add_flow_from_riposte_hit()
 		_show_riposte_hit_message()
+		if _current_attack_name == &"vesper_counter":
+			vesper_counter_hit.emit()
+		else:
+			riposte_hit.emit()
+	elif not damaged.is_empty() and _is_just_dodge_counter_attack_name(_current_attack_name):
+		_show_just_dodge_counter_hit_message()
+		just_dodge_counter_hit.emit()
 	elif not damaged.is_empty() and _is_vesper_art_attack_name(_current_attack_name):
 		_confirm_vesper_art_hit()
 
@@ -516,7 +669,13 @@ func _strike_active_attack_targets() -> void:
 			_attack_damaged_targets.append(target)
 			_spawn_hit_vfx_for_target(target)
 			_add_combo_from_attack_hit(target)
-			if target.has_method("receive_player_attack_hit"):
+			_add_flow_from_attack_hit(target)
+			if _is_just_dodge_counter_attack_name(_current_attack_name):
+				if target.has_method("receive_just_dodge_counter_stun"):
+					target.call("receive_just_dodge_counter_stun", just_dodge_counter_enemy_stun_time)
+				elif target.has_method("receive_parry_stun"):
+					target.call("receive_parry_stun", just_dodge_counter_enemy_stun_time)
+			elif target.has_method("receive_player_attack_hit"):
 				var interrupt_attack_name := &"heavy" if _counts_as_heavy_interrupt_attack(_current_attack_name) else _current_attack_name
 				target.call("receive_player_attack_hit", interrupt_attack_name, self)
 
@@ -550,6 +709,9 @@ func _spawn_hit_vfx_for_target(target: Node) -> void:
 	elif _current_attack_name == &"vesper_art":
 		kind = HitVfx.HitKind.VESPER_ART
 		scale = vesper_art_hit_vfx_scale
+	elif _current_attack_name == &"just_dodge_counter":
+		kind = HitVfx.HitKind.JUST_DODGE
+		scale = just_dodge_counter_vfx_scale
 
 	hit_vfx.configure(kind, scale, hit_vfx_lifetime)
 
@@ -598,11 +760,32 @@ func _get_current_attack_damage() -> float:
 		return _current_attack_damage * riposte_damage_multiplier
 	if _current_attack_name == &"vesper_art":
 		return _current_attack_damage * vesper_art_damage_multiplier
+	if _current_attack_name == &"just_dodge_counter":
+		return _current_attack_damage * just_dodge_counter_damage_multiplier
 
 	return _current_attack_damage
 
+func _try_just_dodge_counter_attack() -> void:
+	if not _is_just_dodge_counter_ready():
+		return
+
+	if not _try_attack(
+		&"just_dodge_counter",
+		light_attack_damage,
+		light_attack_range,
+		light_attack_radius,
+		just_dodge_counter_stamina_cost,
+		just_dodge_counter_windup,
+		just_dodge_counter_active,
+		just_dodge_counter_recovery
+	):
+		return
+
+	_clear_just_dodge_counter_ready()
+	_just_dodge_counter_recent_time_remaining = just_dodge_counter_recent_display_time
+
 func _try_vesper_art_attack() -> void:
-	_try_attack(
+	if _try_attack(
 		&"vesper_art",
 		heavy_attack_damage,
 		heavy_attack_range,
@@ -611,10 +794,11 @@ func _try_vesper_art_attack() -> void:
 		vesper_art_windup,
 		vesper_art_active,
 		vesper_art_recovery
-	)
+	):
+		vesper_art_used.emit()
 
 func _try_riposte_attack() -> void:
-	var attack_name := &"vesper_counter" if parry_stock >= get_parry_stock_max() else &"riposte"
+	var attack_name := &"vesper_counter" if parry_stock >= get_vesper_counter_required_stock() else &"riposte"
 	if not _try_attack(
 		attack_name,
 		heavy_attack_damage,
@@ -637,11 +821,17 @@ func _try_riposte_attack() -> void:
 func _is_riposte_ready() -> bool:
 	return _riposte_time_remaining > 0.0 and parry_stock >= 1
 
+func _is_just_dodge_counter_ready() -> bool:
+	return _just_dodge_counter_time_remaining > 0.0 and not health.is_dead() and _controls_enabled
+
 func _is_riposte_attack_name(attack_name: StringName) -> bool:
 	return attack_name == &"riposte" or attack_name == &"vesper_counter"
 
 func _is_vesper_art_attack_name(attack_name: StringName) -> bool:
 	return attack_name == &"vesper_art"
+
+func _is_just_dodge_counter_attack_name(attack_name: StringName) -> bool:
+	return attack_name == &"just_dodge_counter"
 
 func _counts_as_heavy_interrupt_attack(attack_name: StringName) -> bool:
 	return _is_riposte_attack_name(attack_name) or _is_vesper_art_attack_name(attack_name)
@@ -669,10 +859,70 @@ func _clear_riposte_ready() -> void:
 	_riposte_time_remaining = 0.0
 	_apply_debug_color()
 
+func _grant_just_dodge_counter_ready() -> void:
+	if just_dodge_counter_window > 0.0:
+		_just_dodge_counter_time_remaining = just_dodge_counter_window
+		_show_just_dodge_counter_ready_message()
+	else:
+		_just_dodge_counter_time_remaining = 0.0
+
+	_apply_debug_color()
+
+func _clear_just_dodge_counter_ready() -> void:
+	if _just_dodge_counter_time_remaining <= 0.0:
+		return
+
+	_just_dodge_counter_time_remaining = 0.0
+	_apply_debug_color()
+
 func _reset_parry_reward_state() -> void:
 	parry_stock = 0
 	_riposte_time_remaining = 0.0
 	_apply_debug_color()
+
+func _reset_deflect_state() -> void:
+	_deflect_chain_count = 0
+	_max_deflect_chain = 0
+	_deflect_chain_time_remaining = 0.0
+	_deflect_count = 0
+	_normal_parry_count = 0
+	_parry_fail_count = 0
+	_last_parry_result = "None"
+
+func _reset_current_deflect_chain() -> void:
+	_deflect_chain_count = 0
+	_deflect_chain_time_remaining = 0.0
+
+func _register_deflect_chain() -> void:
+	if _deflect_chain_time_remaining > 0.0:
+		_deflect_chain_count += 1
+	else:
+		_deflect_chain_count = 1
+
+	_max_deflect_chain = maxi(_max_deflect_chain, _deflect_chain_count)
+	_deflect_chain_time_remaining = maxf(0.0, deflect_chain_timeout)
+
+func _update_deflect_chain(delta: float) -> void:
+	if _deflect_chain_time_remaining <= 0.0:
+		return
+
+	_deflect_chain_time_remaining = maxf(0.0, _deflect_chain_time_remaining - delta)
+	if _deflect_chain_time_remaining <= 0.0:
+		_deflect_chain_count = 0
+
+func _get_parry_response(attacker: Node) -> Dictionary:
+	if attacker != null and attacker.has_method("get_current_parry_response"):
+		var response = attacker.call("get_current_parry_response")
+		if response is Dictionary:
+			return response
+
+	return {
+		"parry_stops_enemy": true,
+		"parry_grants_riposte": true,
+		"is_rhythm_deflect": false,
+		"deflect_flow_gain": 0.0,
+		"parry_flow_gain": 0.0
+	}
 
 func _get_locked_attack_direction() -> Vector3:
 	var direction := _move_direction if _move_direction.length_squared() > 0.001 else _last_facing
@@ -703,6 +953,8 @@ func _request_hit_stop_for_current_attack() -> void:
 			_hit_stop.request_hit_stop(riposte_hit_stop_duration)
 		&"vesper_art":
 			_hit_stop.request_hit_stop(vesper_art_hit_stop)
+		&"just_dodge_counter":
+			_hit_stop.request_hit_stop(just_dodge_counter_hit_stop_duration)
 		&"heavy":
 			_hit_stop.request_heavy_attack_hit_stop()
 		_:
@@ -716,6 +968,15 @@ func _request_parry_hit_stop() -> void:
 		return
 
 	_hit_stop.request_hit_stop(parry_hit_stop_duration)
+
+func _request_deflect_hit_stop() -> void:
+	if _hit_stop == null or not is_instance_valid(_hit_stop):
+		_resolve_hit_stop()
+
+	if _hit_stop == null:
+		return
+
+	_hit_stop.request_hit_stop(deflect_hit_stop_duration)
 
 func _request_just_dodge_hit_stop() -> void:
 	if _hit_stop == null or not is_instance_valid(_hit_stop):
@@ -747,6 +1008,8 @@ func _request_camera_shake_for_current_attack() -> void:
 			_camera_follow.request_shake(riposte_camera_shake_strength, riposte_camera_shake_duration)
 		&"vesper_art":
 			_camera_follow.request_shake(vesper_art_camera_shake, vesper_art_camera_shake_duration)
+		&"just_dodge_counter":
+			_camera_follow.request_shake(just_dodge_counter_camera_shake_strength, just_dodge_counter_camera_shake_duration)
 		&"heavy":
 			_camera_follow.request_heavy_attack_shake()
 		_:
@@ -761,6 +1024,15 @@ func _request_parry_camera_shake() -> void:
 
 	_camera_follow.request_shake(parry_shake_strength, parry_shake_duration)
 
+func _request_deflect_camera_shake() -> void:
+	if _camera_follow == null or not is_instance_valid(_camera_follow):
+		_resolve_camera_follow()
+
+	if _camera_follow == null:
+		return
+
+	_camera_follow.request_shake(deflect_shake_strength, deflect_shake_duration)
+
 func _request_just_dodge_camera_shake() -> void:
 	if _camera_follow == null or not is_instance_valid(_camera_follow):
 		_resolve_camera_follow()
@@ -770,7 +1042,7 @@ func _request_just_dodge_camera_shake() -> void:
 
 	_camera_follow.request_shake(just_dodge_camera_shake_strength, just_dodge_camera_shake_duration)
 
-func _spawn_parry_vfx(attacker: Node) -> void:
+func _spawn_parry_vfx(attacker: Node, scale_override: float = -1.0) -> void:
 	if hit_vfx_scene == null:
 		return
 
@@ -778,7 +1050,8 @@ func _spawn_parry_vfx(attacker: Node) -> void:
 	if hit_vfx == null:
 		return
 
-	hit_vfx.configure(HitVfx.HitKind.PARRY, parry_hit_vfx_scale, hit_vfx_lifetime)
+	var vfx_scale := parry_hit_vfx_scale if scale_override <= 0.0 else scale_override
+	hit_vfx.configure(HitVfx.HitKind.PARRY, vfx_scale, hit_vfx_lifetime)
 
 	var parent := get_tree().current_scene
 	if parent == null:
@@ -832,12 +1105,22 @@ func _show_parry_message() -> void:
 	if _combat_ui != null:
 		_combat_ui.show_temporary_message(parry_message)
 
+func _show_deflect_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		var message := deflect_message
+		if _deflect_chain_count >= 2:
+			message = "DEFLECT x%d" % _deflect_chain_count
+		_combat_ui.show_temporary_message(message, deflect_message_duration)
+
 func _show_riposte_ready_message() -> void:
 	if _combat_ui == null or not is_instance_valid(_combat_ui):
 		_resolve_combat_ui()
 
 	if _combat_ui != null:
-		var message := vesper_counter_ready_message if parry_stock >= get_parry_stock_max() else riposte_ready_message
+		var message := vesper_counter_ready_message if parry_stock >= get_vesper_counter_required_stock() else riposte_ready_message
 		_combat_ui.show_temporary_message(message, riposte_ready_message_duration)
 
 func _show_riposte_hit_message() -> void:
@@ -847,6 +1130,20 @@ func _show_riposte_hit_message() -> void:
 	if _combat_ui != null:
 		var message := vesper_counter_hit_message if _current_attack_name == &"vesper_counter" else riposte_hit_message
 		_combat_ui.show_temporary_message(message)
+
+func _show_just_dodge_counter_ready_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(just_dodge_counter_ready_message, just_dodge_counter_message_duration)
+
+func _show_just_dodge_counter_hit_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(just_dodge_counter_hit_message, just_dodge_counter_message_duration)
 
 func _show_vesper_art_hit_message() -> void:
 	if _combat_ui == null or not is_instance_valid(_combat_ui):
@@ -911,12 +1208,27 @@ func _add_combo_from_just_dodge() -> void:
 	else:
 		_combo_tracker.extend_combo(just_dodge_combo_extend_time)
 
-func _add_flow_from_parry() -> void:
+func _add_flow_from_parry(flow_gain: float = 0.0) -> void:
 	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
 		_resolve_flow_tracker()
 
 	if _flow_tracker != null:
-		_flow_tracker.add_parry_flow()
+		if flow_gain > 0.0:
+			_flow_tracker.add_flow(flow_gain, "PARRY")
+		else:
+			_flow_tracker.add_parry_flow()
+
+func _add_flow_from_deflect(flow_gain: float = 0.0) -> void:
+	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
+		_resolve_flow_tracker()
+
+	if _flow_tracker == null:
+		return
+
+	if _flow_tracker.has_method("add_deflect_flow"):
+		_flow_tracker.call("add_deflect_flow", _deflect_chain_count, flow_gain)
+	else:
+		_flow_tracker.add_flow(flow_gain, "DEFLECT")
 
 func _add_flow_from_just_dodge() -> void:
 	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
@@ -932,12 +1244,14 @@ func _confirm_vesper_art_hit() -> void:
 	_vesper_art_hit_confirmed = true
 	_spend_vesper_art_flow(vesper_art_flow_cost, "VESPER ART")
 	_show_vesper_art_hit_message()
+	vesper_art_hit.emit()
 
 func _spend_vesper_art_miss_cost_if_needed() -> void:
 	if not _is_vesper_art_attack_name(_current_attack_name) or _vesper_art_hit_confirmed:
 		return
 
 	_spend_vesper_art_flow(vesper_art_miss_flow_cost, "VESPER ART MISS")
+	vesper_art_missed.emit()
 
 func _spend_vesper_art_flow(amount: float, reason: String) -> void:
 	if amount <= 0.0:
@@ -948,6 +1262,20 @@ func _spend_vesper_art_flow(amount: float, reason: String) -> void:
 	if _flow_tracker != null:
 		_flow_tracker.lose_flow(amount, reason)
 
+func _add_flow_from_attack_hit(_target: Node) -> void:
+	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
+		_resolve_flow_tracker()
+
+	if _flow_tracker == null:
+		return
+
+	if _current_attack_name == &"light":
+		_flow_tracker.add_light_attack_hit_flow()
+	elif _current_attack_name == &"heavy":
+		_flow_tracker.add_heavy_attack_hit_flow()
+	elif _current_attack_name == &"just_dodge_counter":
+		_flow_tracker.add_flow(just_dodge_counter_flow_gain, "JUST COUNTER")
+
 func _add_flow_from_riposte_hit() -> void:
 	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
 		_resolve_flow_tracker()
@@ -956,9 +1284,9 @@ func _add_flow_from_riposte_hit() -> void:
 		return
 
 	if _current_attack_name == &"vesper_counter":
-		_flow_tracker.add_flow(vesper_counter_flow_gain, "VESPER COUNTER")
+		_flow_tracker.add_vesper_counter_hit_flow()
 	else:
-		_flow_tracker.add_flow(riposte_flow_gain, "RIPOSTE")
+		_flow_tracker.add_riposte_hit_flow()
 
 func _set_attack_hitbox_enabled(value: bool) -> void:
 	if attack_hitbox == null:
@@ -1034,7 +1362,11 @@ func _apply_body_debug_color() -> void:
 		return
 
 	if _is_riposte_ready() and _attack_phase == AttackPhase.NONE:
-		_body_material.albedo_color = vesper_ready_body_color if parry_stock >= get_parry_stock_max() else riposte_ready_body_color
+		_body_material.albedo_color = vesper_ready_body_color if parry_stock >= get_vesper_counter_required_stock() else riposte_ready_body_color
+		return
+
+	if _is_just_dodge_counter_ready() and _attack_phase == AttackPhase.NONE:
+		_body_material.albedo_color = just_dodge_counter_ready_body_color
 		return
 
 	match _attack_phase:
@@ -1056,10 +1388,10 @@ func _apply_parry_visual() -> void:
 		return
 
 	if _is_riposte_ready() and not _is_parrying():
-		var ready_color := vesper_ready_ring_color if parry_stock >= get_parry_stock_max() else riposte_ready_ring_color
+		var ready_color := vesper_ready_ring_color if parry_stock >= get_vesper_counter_required_stock() else riposte_ready_ring_color
 		_parry_visual_material.albedo_color = ready_color
 		_parry_visual_material.emission = Color(ready_color.r, ready_color.g, ready_color.b, 1.0)
-		_parry_visual_material.emission_energy_multiplier = 0.75 if parry_stock >= get_parry_stock_max() else 0.55
+		_parry_visual_material.emission_energy_multiplier = 0.75 if parry_stock >= get_vesper_counter_required_stock() else 0.55
 		return
 
 	match _parry_phase:
@@ -1084,8 +1416,11 @@ func set_control_enabled(value: bool) -> void:
 		_dodge_remaining = 0.0
 		_dodge_invulnerable_remaining = 0.0
 		_just_dodge_remaining = 0.0
+		_just_dodge_counter_time_remaining = 0.0
+		_just_dodge_counter_recent_time_remaining = 0.0
 		velocity = Vector3.ZERO
 		_reset_parry_reward_state()
+		_reset_deflect_state()
 		_clear_attack_state()
 		_clear_parry_state()
 
@@ -1098,8 +1433,11 @@ func reset_combat_state() -> void:
 	_dodge_remaining = 0.0
 	_dodge_invulnerable_remaining = 0.0
 	_just_dodge_remaining = 0.0
+	_just_dodge_counter_time_remaining = 0.0
+	_just_dodge_counter_recent_time_remaining = 0.0
 	_attack_direction = Vector3.FORWARD
 	_recent_attack_times.clear()
 	_reset_parry_reward_state()
+	_reset_deflect_state()
 	_clear_attack_state()
 	_clear_parry_state()
