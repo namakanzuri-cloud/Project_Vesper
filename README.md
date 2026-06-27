@@ -59,16 +59,13 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵攻撃シーケンス / コンボパターン Phase 2
 - Fast Combo: 速い斬り → 速い斬り → 速い斬り → 遅延重斬り
 - Grab Mix: 速い斬り → 掴み
-- Heavy Bait: 遅延重斬り
 - Simple Pressure: 速い斬り → 速い斬り
-- Armor Check: アーマー叩きつけ
 - Pressure into Slam: 速い斬り → 速い斬り → アーマー叩きつけ
-- Bait Retreat: blue Deflect slash timing variant
 - Slash Slam Mix: 速い斬り → アーマー叩きつけ
 - 攻撃タイプごとの床予兆の色・サイズによる補助表示
 - 遅延重斬りの予兆中、設定された中断可能時間帯にプレイヤー攻撃を当てると `INTERRUPT!` 表示と短時間スタン
-- 速い斬り、掴み、アーマー叩きつけ、後退フェイント攻撃は差し込み中断不可
-- Fast slash and retreat-slash-colored attacks now use the same Deflect-style parry response; delayed heavy still stops the enemy and grants Riposte Ready.
+- 速い斬り、掴み、アーマー叩きつけは差し込み中断不可
+- Fast/light Deflect attacks use the same Deflect-style parry response; delayed heavy still stops the enemy and grants Riposte Ready.
 - 掴みとアーマー叩きつけはパリィ active 中でも成功扱いにせず、命中時は通常被弾として扱う
 - Normal attacks, Riposte / Vesper Art, and enemy attacks use hit stop
 - Normal attacks, Riposte / Vesper Art, and enemy attacks use camera shake

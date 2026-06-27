@@ -5,7 +5,7 @@ signal interrupt_succeeded
 
 enum EnemyState { CHASE, TELEGRAPH, ACTIVE, RECOVERY, PATTERN_GAP, PATTERN_RECOVERY, STUNNED, DEAD }
 enum AttackType { FAST_SLASH, DELAYED_HEAVY, GRAB, ARMOR_SLAM, RETREAT_SLASH }
-enum AttackPattern { FAST_COMBO, GRAB_MIX, HEAVY_BAIT, SIMPLE_PRESSURE, ARMOR_CHECK, PRESSURE_INTO_SLAM, BAIT_RETREAT, SLASH_SLAM_MIX }
+enum AttackPattern { FAST_COMBO, GRAB_MIX, SIMPLE_PRESSURE, PRESSURE_INTO_SLAM, SLASH_SLAM_MIX }
 enum DistanceBand { CLOSE, MID, FAR }
 
 @export var target_path: NodePath
@@ -26,7 +26,6 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var anti_parry_stock_threshold: int = 2
 @export var anti_parry_grab_weight_bonus: float = 1.4
 @export var anti_parry_armor_weight_bonus: float = 1.35
-@export var anti_parry_bait_weight_bonus: float = 1.25
 @export var aggression_check_window: float = 2.0
 @export var aggression_attack_count_threshold: int = 3
 @export var anti_aggression_weight_bonus: float = 1.25
@@ -37,22 +36,25 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export_group("Attack Patterns")
 @export var fast_combo_weight: float = 3.0
 @export var grab_mix_weight: float = 2.2
-@export var heavy_bait_weight: float = 2.4
 @export var simple_pressure_weight: float = 3.2
-@export var armor_check_weight: float = 2.0
 @export var pressure_into_slam_weight: float = 1.8
-@export var bait_retreat_weight: float = 1.8
 @export var slash_slam_mix_weight: float = 1.6
-@export var fast_combo_step_interval: float = 0.14
-@export var grab_mix_step_interval: float = 0.18
-@export var heavy_bait_step_interval: float = 0.0
-@export var simple_pressure_step_interval: float = 0.13
-@export var armor_check_step_interval: float = 0.0
-@export var pressure_into_slam_step_interval: float = 0.16
-@export var bait_retreat_step_interval: float = 0.0
-@export var slash_slam_mix_step_interval: float = 0.18
+@export var fast_combo_step_interval: float = 0.04
+@export var grab_mix_step_interval: float = 0.06
+@export var simple_pressure_step_interval: float = 0.04
+@export var pressure_into_slam_step_interval: float = 0.05
+@export var slash_slam_mix_step_interval: float = 0.06
 @export var pattern_end_recovery_time: float = 0.42
+@export var pattern_chain_recovery_multiplier: float = 0.45
 @export var pattern_abort_distance: float = 4.8
+
+@export_group("Telegraph Tracking")
+@export var telegraph_tracking_enabled: bool = true
+@export var fast_slash_telegraph_tracking_turn_speed: float = 2.2
+@export var delayed_heavy_telegraph_tracking_turn_speed: float = 0.9
+@export var grab_telegraph_tracking_turn_speed: float = 1.6
+@export var armor_slam_telegraph_tracking_turn_speed: float = 0.0
+@export var retreat_slash_telegraph_tracking_turn_speed: float = 2.2
 
 @export_group("Fast Slash")
 @export var fast_slash_range: float = 1.75
@@ -172,6 +174,7 @@ enum DistanceBand { CLOSE, MID, FAR }
 
 @export_group("Pose")
 @export var pose_tween_time: float = 0.08
+@export var telegraph_pose_progress_enabled: bool = true
 
 @export_group("Collision")
 @export_flags_3d_physics var player_collision_mask: int = 2
@@ -313,11 +316,35 @@ func _update_chase(delta: float) -> void:
 
 func _update_telegraph(delta: float) -> void:
 	_current_attack_telegraph_elapsed += delta
+	_update_telegraph_tracking(delta)
 	_update_telegraph_movement(delta)
+	_update_telegraph_pose_progress()
 	_update_attack_telegraph_transform()
 	_state_time_remaining -= delta
 	if _state_time_remaining <= 0.0:
 		_enter_active_attack()
+
+func _update_telegraph_tracking(delta: float) -> void:
+	if not telegraph_tracking_enabled:
+		return
+
+	var turn_speed := _get_current_telegraph_tracking_turn_speed()
+	if turn_speed <= 0.0:
+		return
+
+	var target_direction := _get_flat_to_target()
+	if target_direction.length_squared() <= 0.001:
+		return
+
+	target_direction = target_direction.normalized()
+	if _attack_direction.length_squared() <= 0.001:
+		_attack_direction = target_direction
+		_face_direction(_attack_direction)
+		return
+
+	var blend := clampf(1.0 - exp(-turn_speed * delta), 0.0, 1.0)
+	_attack_direction = _attack_direction.lerp(target_direction, blend).normalized()
+	_face_direction(_attack_direction)
 
 func _update_telegraph_movement(delta: float) -> void:
 	velocity = Vector3.ZERO
@@ -466,7 +493,7 @@ func _enter_active_attack() -> void:
 
 func _enter_recovery() -> void:
 	_state = EnemyState.RECOVERY
-	_state_time_remaining = maxf(0.0, _get_current_attack_recovery_time())
+	_state_time_remaining = maxf(0.0, _get_current_attack_recovery_time() * _get_current_pattern_chain_recovery_multiplier())
 	_attack_cooldown_remaining = maxf(_attack_cooldown_remaining, attack_cooldown)
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()
@@ -502,6 +529,15 @@ func _advance_attack_pattern() -> void:
 	_set_attack_hitbox_enabled(false)
 	_hide_attack_telegraph()
 	reset_attack_pose(true)
+
+func _get_current_pattern_chain_recovery_multiplier() -> float:
+	if not _has_next_pattern_step():
+		return 1.0
+
+	return maxf(0.0, pattern_chain_recovery_multiplier)
+
+func _has_next_pattern_step() -> bool:
+	return _pattern_active and _pattern_step_index + 1 < _pattern_steps.size()
 
 func _enter_pattern_recovery() -> void:
 	_state = EnemyState.PATTERN_RECOVERY
@@ -875,11 +911,8 @@ func _select_attack_pattern(distance_to_target: float) -> int:
 
 	_append_pattern_option(options, AttackPattern.FAST_COMBO, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.GRAB_MIX, distance_to_target, anti_parry_active, anti_aggression_active)
-	_append_pattern_option(options, AttackPattern.HEAVY_BAIT, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.SIMPLE_PRESSURE, distance_to_target, anti_parry_active, anti_aggression_active)
-	_append_pattern_option(options, AttackPattern.ARMOR_CHECK, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.PRESSURE_INTO_SLAM, distance_to_target, anti_parry_active, anti_aggression_active)
-	_append_pattern_option(options, AttackPattern.BAIT_RETREAT, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.SLASH_SLAM_MIX, distance_to_target, anti_parry_active, anti_aggression_active)
 
 	if options.is_empty():
@@ -943,25 +976,15 @@ func _is_pattern_valid_for_distance_band(pattern: int, distance_band: int) -> bo
 			match pattern:
 				AttackPattern.FAST_COMBO, AttackPattern.GRAB_MIX, AttackPattern.SIMPLE_PRESSURE, AttackPattern.SLASH_SLAM_MIX:
 					return true
-		DistanceBand.MID:
+		DistanceBand.MID, DistanceBand.FAR:
 			match pattern:
-				AttackPattern.SIMPLE_PRESSURE, AttackPattern.HEAVY_BAIT, AttackPattern.ARMOR_CHECK, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.BAIT_RETREAT, AttackPattern.SLASH_SLAM_MIX:
-					return true
-		DistanceBand.FAR:
-			match pattern:
-				AttackPattern.HEAVY_BAIT, AttackPattern.BAIT_RETREAT:
+				AttackPattern.SIMPLE_PRESSURE, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX:
 					return true
 
 	return false
 
 func _get_fallback_pattern_for_distance_band(distance_band: int) -> int:
-	match distance_band:
-		DistanceBand.FAR:
-			return AttackPattern.BAIT_RETREAT
-		DistanceBand.MID:
-			return AttackPattern.HEAVY_BAIT
-		_:
-			return AttackPattern.SIMPLE_PRESSURE
+	return AttackPattern.SIMPLE_PRESSURE
 
 func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
 	var base_weight := _get_pattern_base_weight(pattern)
@@ -976,26 +999,16 @@ func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
 					return base_weight * 1.25
 				AttackPattern.SLASH_SLAM_MIX:
 					return base_weight * 1.05
-				AttackPattern.HEAVY_BAIT:
-					return base_weight * 0.55
-				AttackPattern.ARMOR_CHECK:
-					return base_weight * 0.7
 				AttackPattern.PRESSURE_INTO_SLAM:
 					return base_weight * 0.75
-				AttackPattern.BAIT_RETREAT:
-					return base_weight * 0.45
+
 		DistanceBand.MID:
 			match pattern:
-				AttackPattern.HEAVY_BAIT:
-					return base_weight * 1.35
-				AttackPattern.BAIT_RETREAT:
-					return base_weight * 1.25
 				AttackPattern.PRESSURE_INTO_SLAM:
 					return base_weight * 1.25
 				AttackPattern.SLASH_SLAM_MIX:
 					return base_weight * 1.15
-				AttackPattern.ARMOR_CHECK:
-					return base_weight * 1.0
+
 				AttackPattern.SIMPLE_PRESSURE:
 					return base_weight * 0.8
 				AttackPattern.FAST_COMBO:
@@ -1004,10 +1017,12 @@ func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
 					return base_weight * 0.45
 		DistanceBand.FAR:
 			match pattern:
-				AttackPattern.BAIT_RETREAT:
-					return base_weight * 0.35
-				AttackPattern.HEAVY_BAIT:
-					return base_weight * 0.25
+				AttackPattern.SIMPLE_PRESSURE:
+					return base_weight * 0.7
+				AttackPattern.PRESSURE_INTO_SLAM:
+					return base_weight * 0.9
+				AttackPattern.SLASH_SLAM_MIX:
+					return base_weight * 0.85
 				_:
 					return 0.0
 
@@ -1019,14 +1034,10 @@ func _get_pattern_base_weight(pattern: int) -> float:
 			return fast_combo_weight
 		AttackPattern.GRAB_MIX:
 			return grab_mix_weight
-		AttackPattern.HEAVY_BAIT:
-			return heavy_bait_weight
-		AttackPattern.ARMOR_CHECK:
-			return armor_check_weight
+
 		AttackPattern.PRESSURE_INTO_SLAM:
 			return pressure_into_slam_weight
-		AttackPattern.BAIT_RETREAT:
-			return bait_retreat_weight
+
 		AttackPattern.SLASH_SLAM_MIX:
 			return slash_slam_mix_weight
 		_:
@@ -1039,14 +1050,12 @@ func _apply_pattern_weight_modifiers(pattern: int, weight: float, anti_parry_act
 		match pattern:
 			AttackPattern.GRAB_MIX:
 				modified_weight *= anti_parry_grab_weight_bonus
-			AttackPattern.ARMOR_CHECK, AttackPattern.PRESSURE_INTO_SLAM:
+			AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX:
 				modified_weight *= anti_parry_armor_weight_bonus
-			AttackPattern.BAIT_RETREAT:
-				modified_weight *= anti_parry_bait_weight_bonus
 
 	if anti_aggression_active:
 		match pattern:
-			AttackPattern.FAST_COMBO, AttackPattern.SIMPLE_PRESSURE, AttackPattern.ARMOR_CHECK:
+			AttackPattern.FAST_COMBO, AttackPattern.SIMPLE_PRESSURE:
 				modified_weight *= anti_aggression_weight_bonus
 
 	return modified_weight
@@ -1088,7 +1097,10 @@ func _get_far_range_limit() -> float:
 	return maxf(_get_mid_range_limit(), far_range_distance)
 
 func _get_pattern_entry_range() -> float:
-	return minf(_get_attack_start_range(), _get_far_range_limit())
+	return minf(_get_multi_attack_pattern_entry_range(), _get_far_range_limit())
+
+func _get_multi_attack_pattern_entry_range() -> float:
+	return _get_attack_start_range_for_type(AttackType.FAST_SLASH)
 
 func _get_distance_band_name(distance_band: int) -> String:
 	match distance_band:
@@ -1151,16 +1163,12 @@ func _get_pattern_steps(pattern: int) -> Array[int]:
 		AttackPattern.GRAB_MIX:
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.GRAB)
-		AttackPattern.HEAVY_BAIT:
-			steps.append(AttackType.DELAYED_HEAVY)
-		AttackPattern.ARMOR_CHECK:
-			steps.append(AttackType.ARMOR_SLAM)
+
 		AttackPattern.PRESSURE_INTO_SLAM:
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.ARMOR_SLAM)
-		AttackPattern.BAIT_RETREAT:
-			steps.append(AttackType.RETREAT_SLASH)
+
 		AttackPattern.SLASH_SLAM_MIX:
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.ARMOR_SLAM)
@@ -1169,16 +1177,8 @@ func _get_pattern_steps(pattern: int) -> Array[int]:
 			steps.append(AttackType.FAST_SLASH)
 	return steps
 
-func _get_pattern_first_attack(pattern: int) -> int:
-	match pattern:
-		AttackPattern.HEAVY_BAIT:
-			return AttackType.DELAYED_HEAVY
-		AttackPattern.ARMOR_CHECK:
-			return AttackType.ARMOR_SLAM
-		AttackPattern.BAIT_RETREAT:
-			return AttackType.RETREAT_SLASH
-		_:
-			return AttackType.FAST_SLASH
+func _get_pattern_first_attack(_pattern: int) -> int:
+	return AttackType.FAST_SLASH
 
 func _get_current_pattern_step_interval() -> float:
 	match _current_attack_pattern:
@@ -1186,14 +1186,10 @@ func _get_current_pattern_step_interval() -> float:
 			return fast_combo_step_interval
 		AttackPattern.GRAB_MIX:
 			return grab_mix_step_interval
-		AttackPattern.HEAVY_BAIT:
-			return heavy_bait_step_interval
-		AttackPattern.ARMOR_CHECK:
-			return armor_check_step_interval
+
 		AttackPattern.PRESSURE_INTO_SLAM:
 			return pressure_into_slam_step_interval
-		AttackPattern.BAIT_RETREAT:
-			return bait_retreat_step_interval
+
 		AttackPattern.SLASH_SLAM_MIX:
 			return slash_slam_mix_step_interval
 		_:
@@ -1205,14 +1201,10 @@ func _get_attack_pattern_name(pattern: int) -> String:
 			return "Fast Combo"
 		AttackPattern.GRAB_MIX:
 			return "Grab Mix"
-		AttackPattern.HEAVY_BAIT:
-			return "Heavy Bait"
-		AttackPattern.ARMOR_CHECK:
-			return "Armor Check"
+
 		AttackPattern.PRESSURE_INTO_SLAM:
 			return "Pressure into Slam"
-		AttackPattern.BAIT_RETREAT:
-			return "Bait Retreat"
+
 		AttackPattern.SLASH_SLAM_MIX:
 			return "Slash Slam Mix"
 		_:
@@ -1233,20 +1225,6 @@ func _clear_attack_pattern_state() -> void:
 	_pattern_step_index = 0
 	_pattern_steps.clear()
 
-func _get_attack_start_range() -> float:
-	return maxf(
-		_get_attack_start_range_for_type(AttackType.FAST_SLASH),
-		maxf(
-			_get_attack_start_range_for_type(AttackType.DELAYED_HEAVY),
-			maxf(
-				_get_attack_start_range_for_type(AttackType.GRAB),
-				maxf(
-					_get_attack_start_range_for_type(AttackType.ARMOR_SLAM),
-					_get_attack_start_range_for_type(AttackType.RETREAT_SLASH)
-				)
-			)
-		)
-	)
 
 func _get_attack_start_range_for_type(attack_type: int) -> float:
 	if attack_type == AttackType.RETREAT_SLASH:
@@ -1456,6 +1434,19 @@ func _get_current_attack_telegraph_color() -> Color:
 		_:
 			return fast_slash_telegraph_color
 
+func _get_current_telegraph_tracking_turn_speed() -> float:
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			return armor_slam_telegraph_tracking_turn_speed
+		AttackType.RETREAT_SLASH:
+			return retreat_slash_telegraph_tracking_turn_speed
+		AttackType.DELAYED_HEAVY:
+			return delayed_heavy_telegraph_tracking_turn_speed
+		AttackType.GRAB:
+			return grab_telegraph_tracking_turn_speed
+		_:
+			return fast_slash_telegraph_tracking_turn_speed
+
 func _get_attack_type_name(attack_type: int) -> String:
 	match attack_type:
 		AttackType.ARMOR_SLAM:
@@ -1621,6 +1612,58 @@ func _set_attack_pose(attack_type: int, is_active: bool) -> void:
 			else:
 				_apply_pose_values(Vector3(0.5, 1.08, 0.02), Vector3(-14, -24, -12), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.68, 1.08, -0.1), Vector3(-18, -28, -12), true, duration)
 
+func _update_telegraph_pose_progress() -> void:
+	if not telegraph_pose_progress_enabled:
+		return
+
+	var telegraph_time := _get_current_attack_telegraph_time()
+	if telegraph_time <= 0.0:
+		return
+
+	var progress := clampf(_current_attack_telegraph_elapsed / telegraph_time, 0.0, 1.0)
+	progress = progress * progress * (3.0 - 2.0 * progress)
+	_begin_pose_change(0.0)
+	_apply_body_scale(_current_attack_type == AttackType.ARMOR_SLAM)
+
+	match _current_attack_type:
+		AttackType.ARMOR_SLAM:
+			_apply_pose_progress(Vector3(0.46, 1.78, 0.06), Vector3(-86, -12, -28), Vector3(-0.42, 1.62, 0.02), Vector3(-78, 12, 26), Vector3(0.18, 2.05, 0.16), Vector3(-88, 0, -12), true, Vector3(0.32, 1.02, -0.54), Vector3(82, 0, -20), Vector3(-0.34, 1.02, -0.52), Vector3(82, 0, 20), Vector3(0.0, 0.74, -0.72), Vector3(96, 0, 0), true, progress)
+		AttackType.RETREAT_SLASH:
+			_apply_pose_progress(Vector3(0.5, 1.0, 0.22), Vector3(-8, -68, -10), Vector3(-0.44, 1.0, -0.08), Vector3(18, 0, 16), Vector3(0.82, 0.98, 0.08), Vector3(-12, -76, -8), true, Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, progress)
+		AttackType.DELAYED_HEAVY:
+			_apply_pose_progress(Vector3(0.5, 1.48, 0.12), Vector3(-58, -22, -24), Vector3(-0.42, 1.08, -0.18), Vector3(18, 0, 12), Vector3(0.52, 1.82, 0.22), Vector3(-70, -18, -22), true, Vector3(0.18, 1.22, -0.58), Vector3(48, -18, -42), Vector3(-0.38, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.12, 1.05, -0.98), Vector3(82, 36, -36), true, progress)
+		AttackType.GRAB:
+			_apply_pose_progress(Vector3(0.36, 1.08, -0.32), Vector3(45, 0, -14), Vector3(-0.22, 1.12, -0.56), Vector3(62, 0, 18), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, Vector3(0.28, 1.08, -0.68), Vector3(72, 0, -16), Vector3(-0.28, 1.08, -0.78), Vector3(76, 0, 16), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, progress)
+		_:
+			_apply_pose_progress(Vector3(0.5, 1.08, 0.02), Vector3(-14, -24, -12), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.68, 1.08, -0.1), Vector3(-18, -28, -12), true, Vector3(0.22, 1.12, -0.5), Vector3(35, 36, -28), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.1, 1.12, -0.88), Vector3(68, 62, -18), true, progress)
+
+func _apply_pose_progress(
+	right_start_position: Vector3,
+	right_start_rotation_degrees: Vector3,
+	left_start_position: Vector3,
+	left_start_rotation_degrees: Vector3,
+	weapon_start_position: Vector3,
+	weapon_start_rotation_degrees: Vector3,
+	weapon_start_visible: bool,
+	right_end_position: Vector3,
+	right_end_rotation_degrees: Vector3,
+	left_end_position: Vector3,
+	left_end_rotation_degrees: Vector3,
+	weapon_end_position: Vector3,
+	weapon_end_rotation_degrees: Vector3,
+	weapon_end_visible: bool,
+	progress: float
+) -> void:
+	_apply_pose_values(
+		right_start_position.lerp(right_end_position, progress),
+		right_start_rotation_degrees.lerp(right_end_rotation_degrees, progress),
+		left_start_position.lerp(left_end_position, progress),
+		left_start_rotation_degrees.lerp(left_end_rotation_degrees, progress),
+		weapon_start_position.lerp(weapon_end_position, progress),
+		weapon_start_rotation_degrees.lerp(weapon_end_rotation_degrees, progress),
+		weapon_start_visible or weapon_end_visible,
+		0.0
+	)
 func reset_attack_pose(use_tween: bool = false) -> void:
 	var duration := pose_tween_time if use_tween else 0.0
 	_begin_pose_change(duration)
