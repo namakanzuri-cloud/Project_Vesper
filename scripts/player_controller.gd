@@ -197,7 +197,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 
 @export_group("Blood Rend / Blood Scent")
 @export var blood_rend_damage: float = 12.0
-@export var blood_rend_self_damage: float = 8.0
+@export var blood_rend_self_damage: float = 20.0
 @export var blood_rend_range: float = 2.0
 @export var blood_rend_radius: float = 1.0
 @export var blood_rend_ready_duration: float = 0.8
@@ -213,6 +213,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export var blood_rend_ready_message: String = "BLOOD REND READY (Q)"
 @export var blood_rend_hit_message: String = "BLOOD REND!"
 @export var blood_rend_blocked_message: String = "TOO LITTLE HP"
+@export var blood_scent_break_message: String = "BLOOD SCENT BROKEN"
 @export var blood_rend_message_duration: float = 0.55
 @export_group("Combo")
 @export var combo_tracker_path: NodePath
@@ -576,6 +577,9 @@ func is_blood_scent_active() -> bool:
 func get_blood_scent_time_remaining() -> float:
 	return _blood_scent_time_remaining if is_blood_scent_active() else 0.0
 
+func record_blood_scent_interrupt_success() -> void:
+	_register_blood_scent_success()
+
 func get_parry_stock() -> int:
 	return parry_stock
 
@@ -635,6 +639,7 @@ func _on_health_changed(current_health: float, _max_health: float) -> void:
 			damage_taken.emit(normal_damage_delta)
 			if is_blood_scent_active():
 				blood_scent_hit_taken.emit()
+				_show_blood_scent_break_message()
 				_end_blood_scent()
 			_reset_parry_reward_state()
 			_reset_deflect_state()
@@ -1354,6 +1359,13 @@ func _show_blood_rend_blocked_message() -> void:
 
 	if _combat_ui != null:
 		_combat_ui.show_temporary_message(blood_rend_blocked_message, blood_rend_message_duration)
+
+func _show_blood_scent_break_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(blood_scent_break_message, blood_rend_message_duration)
 
 func _resolve_combo_tracker() -> void:
 	if combo_tracker_path != NodePath(""):

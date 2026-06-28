@@ -110,6 +110,8 @@ func _connect_combat_stats() -> void:
 		player.blood_scent_hit_taken.connect(combat_stats.record_blood_scent_hit_taken)
 	if not enemy.interrupt_succeeded.is_connected(combat_stats.record_interrupt):
 		enemy.interrupt_succeeded.connect(combat_stats.record_interrupt)
+	if not enemy.interrupt_succeeded.is_connected(player.record_blood_scent_interrupt_success):
+		enemy.interrupt_succeeded.connect(player.record_blood_scent_interrupt_success)
 	if combo_tracker != null and not combo_tracker.combo_changed.is_connected(combat_stats.record_combo_changed):
 		combo_tracker.combo_changed.connect(combat_stats.record_combo_changed)
 	if flow_tracker != null and not flow_tracker.flow_changed.is_connected(combat_stats.record_flow_changed):

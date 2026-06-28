@@ -124,11 +124,13 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 
 - `Q`: Blood Rend, available briefly after a normal attack hit, Just Dodge Counter hit, Riposte hit, or Vesper Counter hit.
 - Blood Rend is optional and does nothing outside the short `BLOOD REND READY (Q)` window.
-- Blood Rend damages both the enemy and the player, but self-damage is tracked as blood cost instead of normal damage taken.
-- Blood Rend self-damage cannot kill the player in this prototype; it leaves at least 1 HP.
+- Blood Rend damages both the enemy and the player; current default blood cost is 20 HP.
+- Blood Rend self-damage is tracked as blood cost instead of normal damage taken, and cannot kill the player in this prototype; it leaves at least 1 HP.
+- Blood Rend use consumes the ready window even if the follow-up misses.
 - A successful Blood Rend hit starts `BLOOD SCENT` for a short duration.
-- During Blood Scent, clean defensive/counter successes grant a modest Flow/style reward.
-- Taking normal enemy damage during Blood Scent ends Blood Scent immediately and still counts as bad play.
+- During Blood Scent, clean defensive/counter successes grant a modest Flow/style reward. Normal attack hits do not receive the Blood Scent clean-play reward.
+- Taking normal enemy damage during Blood Scent ends Blood Scent immediately, shows `BLOOD SCENT BROKEN`, increments the Blood Scent hit-taken stat, and still counts as normal bad damage taken.
+- Result scoring gives a modest Blood Rend hit bonus and Blood Scent clean-success bonus, and applies a clear Blood Scent hit-taken penalty. Blood Rend self-damage is recorded but does not reduce score.
 - Result JSON includes `bloodRendUseCount`, `bloodRendHitCount`, `bloodCostTotal`, `bloodScentSuccessCount`, and `bloodScentHitTakenCount`.
 
 ## File Structure

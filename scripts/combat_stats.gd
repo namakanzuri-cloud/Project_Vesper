@@ -20,7 +20,8 @@ signal stats_changed
 @export var score_per_vesper_counter_hit: float = 28.0
 @export var score_per_just_counter_hit: float = 20.0
 @export var score_per_vesper_art_hit: float = 40.0
-@export var score_per_blood_scent_success: float = 10.0
+@export var score_per_blood_rend_hit: float = 10.0
+@export var score_per_blood_scent_success: float = 8.0
 @export var score_per_final_flow: float = 0.4
 
 @export_group("Score Penalties")
@@ -28,6 +29,7 @@ signal stats_changed
 @export var score_penalty_per_hit_taken: float = 8.0
 @export var score_penalty_per_parry_fail: float = 4.0
 @export var score_penalty_per_vesper_art_miss: float = 20.0
+@export var score_penalty_per_blood_scent_hit_taken: float = 16.0
 
 @export_group("Clear Time")
 @export var clear_time_bonus_target: float = 45.0
@@ -249,6 +251,7 @@ func get_score() -> float:
 	score += vesper_counter_hit_count * score_per_vesper_counter_hit
 	score += just_dodge_counter_hit_count * score_per_just_counter_hit
 	score += vesper_art_hit_count * score_per_vesper_art_hit
+	score += blood_rend_hit_count * score_per_blood_rend_hit
 	score += blood_scent_success_count * score_per_blood_scent_success
 	score += final_flow * score_per_final_flow
 
@@ -258,6 +261,7 @@ func get_score() -> float:
 	score -= hit_taken_count * score_penalty_per_hit_taken
 	score -= parry_fail_count * score_penalty_per_parry_fail
 	score -= vesper_art_miss_count * score_penalty_per_vesper_art_miss
+	score -= blood_scent_hit_taken_count * score_penalty_per_blood_scent_hit_taken
 	return maxf(0.0, score)
 
 func get_rank() -> String:
@@ -355,5 +359,6 @@ func get_result_log_summary() -> String:
 	lines.append("Time: %.1fs / Damage: %d" % [float(last_result_data.get("clearTime", 0.0)), int(last_result_data.get("damageTaken", 0))])
 	lines.append("Max Combo: %d / Final Flow: %d" % [int(last_result_data.get("maxCombo", 0)), int(last_result_data.get("finalFlow", 0))])
 	lines.append("Deflect: %d / Max Chain: %d / Fail: %d" % [int(last_result_data.get("deflectCount", 0)), int(last_result_data.get("maxDeflectChain", 0)), int(last_result_data.get("parryFailCount", 0))])
-	lines.append("Blood Rend: %d/%d / Scent OK: %d" % [int(last_result_data.get("bloodRendHitCount", 0)), int(last_result_data.get("bloodRendUseCount", 0)), int(last_result_data.get("bloodScentSuccessCount", 0))])
+	lines.append("Blood Rend: %d/%d / Cost: %d" % [int(last_result_data.get("bloodRendHitCount", 0)), int(last_result_data.get("bloodRendUseCount", 0)), int(last_result_data.get("bloodCostTotal", 0))])
+	lines.append("Blood Scent: OK %d / Hit %d" % [int(last_result_data.get("bloodScentSuccessCount", 0)), int(last_result_data.get("bloodScentHitTakenCount", 0))])
 	return "\n".join(lines)
