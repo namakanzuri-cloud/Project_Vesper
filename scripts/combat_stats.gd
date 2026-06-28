@@ -20,6 +20,7 @@ signal stats_changed
 @export var score_per_vesper_counter_hit: float = 28.0
 @export var score_per_just_counter_hit: float = 20.0
 @export var score_per_vesper_art_hit: float = 40.0
+@export var score_per_blood_scent_success: float = 10.0
 @export var score_per_final_flow: float = 0.4
 
 @export_group("Score Penalties")
@@ -50,6 +51,11 @@ var just_dodge_counter_hit_count: int = 0
 var vesper_art_use_count: int = 0
 var vesper_art_hit_count: int = 0
 var vesper_art_miss_count: int = 0
+var blood_rend_use_count: int = 0
+var blood_rend_hit_count: int = 0
+var blood_cost_total: float = 0.0
+var blood_scent_success_count: int = 0
+var blood_scent_hit_taken_count: int = 0
 var final_flow: float = 0.0
 var is_tracking: bool = false
 var last_result_data: Dictionary = {}
@@ -81,6 +87,11 @@ func reset_for_combat() -> void:
 	vesper_art_use_count = 0
 	vesper_art_hit_count = 0
 	vesper_art_miss_count = 0
+	blood_rend_use_count = 0
+	blood_rend_hit_count = 0
+	blood_cost_total = 0.0
+	blood_scent_success_count = 0
+	blood_scent_hit_taken_count = 0
 	final_flow = 0.0
 	is_tracking = true
 	stats_changed.emit()
@@ -198,6 +209,35 @@ func record_vesper_art_miss() -> void:
 	vesper_art_miss_count += 1
 	stats_changed.emit()
 
+func record_blood_rend_used() -> void:
+	if not is_tracking:
+		return
+
+	blood_rend_use_count += 1
+	stats_changed.emit()
+
+func record_blood_rend_hit(blood_cost: float) -> void:
+	if not is_tracking:
+		return
+
+	blood_rend_hit_count += 1
+	blood_cost_total += maxf(0.0, blood_cost)
+	stats_changed.emit()
+
+func record_blood_scent_success() -> void:
+	if not is_tracking:
+		return
+
+	blood_scent_success_count += 1
+	stats_changed.emit()
+
+func record_blood_scent_hit_taken() -> void:
+	if not is_tracking:
+		return
+
+	blood_scent_hit_taken_count += 1
+	stats_changed.emit()
+
 func get_score() -> float:
 	var score := 0.0
 	score += max_combo * score_per_combo_hit
@@ -209,6 +249,7 @@ func get_score() -> float:
 	score += vesper_counter_hit_count * score_per_vesper_counter_hit
 	score += just_dodge_counter_hit_count * score_per_just_counter_hit
 	score += vesper_art_hit_count * score_per_vesper_art_hit
+	score += blood_scent_success_count * score_per_blood_scent_success
 	score += final_flow * score_per_final_flow
 
 	var clear_time_bonus := maxf(0.0, clear_time_bonus_target - combat_time) * score_per_second_under_target
@@ -255,6 +296,11 @@ func get_result_text() -> String:
 	lines.append("Vesper Art Use: %d" % vesper_art_use_count)
 	lines.append("Vesper Art Hit: %d" % vesper_art_hit_count)
 	lines.append("Vesper Art Miss: %d" % vesper_art_miss_count)
+	lines.append("Blood Rend Use: %d" % blood_rend_use_count)
+	lines.append("Blood Rend Hit: %d" % blood_rend_hit_count)
+	lines.append("Blood Cost: %d" % int(round(blood_cost_total)))
+	lines.append("Blood Scent Success: %d" % blood_scent_success_count)
+	lines.append("Blood Scent Hit Taken: %d" % blood_scent_hit_taken_count)
 	lines.append("Final Flow: %d" % int(round(final_flow)))
 	return "\n".join(lines)
 
@@ -284,6 +330,11 @@ func build_result_log(result: String) -> Dictionary:
 		"vesperArtUseCount": vesper_art_use_count,
 		"vesperArtHitCount": vesper_art_hit_count,
 		"vesperArtMissCount": vesper_art_miss_count,
+		"bloodRendUseCount": blood_rend_use_count,
+		"bloodRendHitCount": blood_rend_hit_count,
+		"bloodCostTotal": int(round(blood_cost_total)),
+		"bloodScentSuccessCount": blood_scent_success_count,
+		"bloodScentHitTakenCount": blood_scent_hit_taken_count,
 		"timestampText": Time.get_datetime_string_from_system(false, true),
 		"notes": ""
 	}
@@ -304,4 +355,5 @@ func get_result_log_summary() -> String:
 	lines.append("Time: %.1fs / Damage: %d" % [float(last_result_data.get("clearTime", 0.0)), int(last_result_data.get("damageTaken", 0))])
 	lines.append("Max Combo: %d / Final Flow: %d" % [int(last_result_data.get("maxCombo", 0)), int(last_result_data.get("finalFlow", 0))])
 	lines.append("Deflect: %d / Max Chain: %d / Fail: %d" % [int(last_result_data.get("deflectCount", 0)), int(last_result_data.get("maxDeflectChain", 0)), int(last_result_data.get("parryFailCount", 0))])
+	lines.append("Blood Rend: %d/%d / Scent OK: %d" % [int(last_result_data.get("bloodRendHitCount", 0)), int(last_result_data.get("bloodRendUseCount", 0)), int(last_result_data.get("bloodScentSuccessCount", 0))])
 	return "\n".join(lines)

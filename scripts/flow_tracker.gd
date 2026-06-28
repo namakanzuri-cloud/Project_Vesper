@@ -18,6 +18,7 @@ signal flow_popup_requested(message: String, duration: float)
 @export var vesper_counter_hit_flow_gain: float = 22.0
 @export var counter_hit_flow_gain: float = 10.0
 @export var heavy_punish_flow_gain: float = 20.0
+@export var blood_scent_success_flow_gain: float = 5.0
 
 @export_group("Flow Losses")
 @export var damage_taken_flow_loss: float = 0.0
@@ -108,6 +109,9 @@ func add_counter_hit_flow() -> void:
 
 func add_heavy_punish_flow() -> void:
 	add_flow(heavy_punish_flow_gain, "HEAVY PUNISH")
+
+func add_blood_scent_success_flow() -> void:
+	add_flow(blood_scent_success_flow_gain, "BLOOD SCENT")
 
 func lose_damage_taken_flow() -> void:
 	lose_flow(damage_taken_flow_loss, "HIT")

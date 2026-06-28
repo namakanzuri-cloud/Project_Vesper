@@ -168,6 +168,8 @@ func _update_combat_debug() -> void:
 		lines.append("Vesper Counter Ready: %s (%.2fs)" % [_format_ready(_player.is_vesper_counter_ready()), _player.get_vesper_counter_time_remaining()])
 		lines.append("Vesper Art Ready: %s" % _format_ready(_player.is_vesper_art_ready()))
 		lines.append("Just Dodge Counter Ready: %s (%.2fs)" % [_format_ready(_player.is_just_dodge_counter_ready()), _player.get_just_dodge_counter_time_remaining()])
+		lines.append("Blood Rend Ready: %s (%.2fs)" % [_format_ready(_player.is_blood_rend_ready()), _player.get_blood_rend_ready_time_remaining()])
+		lines.append("Blood Scent: %s (%.2fs)" % [_format_ready(_player.is_blood_scent_active()), _player.get_blood_scent_time_remaining()])
 		lines.append("Just Counter Recent: %s" % _format_ready(_player.was_just_dodge_counter_recently_used()))
 	else:
 		lines.append("Parry Stock: -")
@@ -175,16 +177,20 @@ func _update_combat_debug() -> void:
 		lines.append("Vesper Counter Ready: -")
 		lines.append("Vesper Art Ready: -")
 		lines.append("Just Dodge Counter Ready: -")
+		lines.append("Blood Rend Ready: -")
+		lines.append("Blood Scent: -")
 		lines.append("Just Counter Recent: -")
 
 	if _enemy != null and is_instance_valid(_enemy):
 		lines.append("Enemy Pattern: %s" % _enemy.get_debug_current_pattern_name())
 		lines.append("Enemy Distance: %s" % _enemy.get_debug_distance_band())
 		lines.append("Enemy State: %s" % _enemy.get_debug_state_text())
+		lines.append("Floor Telegraph: %s" % _enemy.get_floor_telegraph_visual_mode_name())
 	else:
 		lines.append("Enemy Pattern: -")
 		lines.append("Enemy Distance: -")
 		lines.append("Enemy State: -")
+		lines.append("Floor Telegraph: -")
 
 	if _combat_stats != null:
 		lines.append("Combat Time: %.1fs" % _combat_stats.combat_time)
@@ -194,6 +200,8 @@ func _update_combat_debug() -> void:
 		lines.append("Deflect/F/Max: %d / %d / %d" % [_combat_stats.deflect_count, _combat_stats.parry_fail_count, _combat_stats.max_deflect_chain])
 		lines.append("Score/Rank: %d / %s" % [int(round(_combat_stats.get_score())), _combat_stats.get_rank()])
 		lines.append("Vesper Art U/H/M: %d / %d / %d" % [_combat_stats.vesper_art_use_count, _combat_stats.vesper_art_hit_count, _combat_stats.vesper_art_miss_count])
+		lines.append("Blood Rend U/H/Cost: %d / %d / %d" % [_combat_stats.blood_rend_use_count, _combat_stats.blood_rend_hit_count, int(round(_combat_stats.blood_cost_total))])
+		lines.append("Blood Scent OK/Hit: %d / %d" % [_combat_stats.blood_scent_success_count, _combat_stats.blood_scent_hit_taken_count])
 	else:
 		lines.append("Style: -")
 	var debug_text := ""
@@ -367,6 +375,12 @@ func _update_parry_reward_labels() -> void:
 		riposte_status_label.visible = true
 	elif not player_dead and not enemy_dead and _player.is_just_dodge_counter_ready():
 		riposte_status_label.text = _player.just_dodge_counter_ready_message
+		riposte_status_label.visible = true
+	elif not player_dead and not enemy_dead and _player.is_blood_rend_ready():
+		riposte_status_label.text = _player.blood_rend_ready_message
+		riposte_status_label.visible = true
+	elif not player_dead and not enemy_dead and _player.is_blood_scent_active():
+		riposte_status_label.text = "BLOOD SCENT %.1fs" % _player.get_blood_scent_time_remaining()
 		riposte_status_label.visible = true
 	elif not player_dead and not enemy_dead and _player.is_vesper_art_ready():
 		riposte_status_label.text = _player.vesper_art_ready_message

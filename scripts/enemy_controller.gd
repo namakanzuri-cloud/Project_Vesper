@@ -6,7 +6,9 @@ signal interrupt_succeeded
 enum EnemyState { CHASE, TELEGRAPH, ACTIVE, RECOVERY, PATTERN_GAP, PATTERN_RECOVERY, STUNNED, DEAD }
 enum AttackType { FAST_SLASH, DELAYED_HEAVY, GRAB, ARMOR_SLAM, RETREAT_SLASH }
 enum AttackPattern { FAST_COMBO, GRAB_MIX, SIMPLE_PRESSURE, PRESSURE_INTO_SLAM, SLASH_SLAM_MIX }
+enum FastComboFinisher { HEAVY_FINISH, GRAB_FINISH, SLAM_FINISH }
 enum DistanceBand { CLOSE, MID, FAR }
+enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 
 @export var target_path: NodePath
 @export var target_group: StringName = &"player"
@@ -23,22 +25,28 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var repeat_pattern_avoid_chance: float = 0.65
 @export var repeat_pattern_weight_multiplier: float = 0.35
 @export var recent_pattern_memory_count: int = 2
+@export var dangerous_outcome_repeat_weight_multiplier: float = 0.35
 @export var anti_parry_stock_threshold: int = 2
 @export var anti_parry_grab_weight_bonus: float = 1.4
 @export var anti_parry_armor_weight_bonus: float = 1.35
 @export var aggression_check_window: float = 2.0
 @export var aggression_attack_count_threshold: int = 3
 @export var anti_aggression_weight_bonus: float = 1.25
+@export var blood_scent_pressure_weight_bonus: float = 1.2
 @export var debug_log_attack_types: bool = false
 @export var debug_log_attack_patterns: bool = false
 @export var show_ai_debug_text: bool = false
 
 @export_group("Attack Patterns")
+# Combo roles:
+# Fast Combo = Deflect showcase into a final read.
+# Simple Pressure = short pressure, Grab Mix = early parry-habit punish.
+# Slam patterns = anti-mash / anti-blind-parry punishment.
 @export var fast_combo_weight: float = 3.0
-@export var grab_mix_weight: float = 2.2
+@export var grab_mix_weight: float = 1.4
 @export var simple_pressure_weight: float = 3.2
-@export var pressure_into_slam_weight: float = 1.8
-@export var slash_slam_mix_weight: float = 1.6
+@export var pressure_into_slam_weight: float = 1.2
+@export var slash_slam_mix_weight: float = 1.1
 @export var fast_combo_step_interval: float = 0.04
 @export var grab_mix_step_interval: float = 0.06
 @export var simple_pressure_step_interval: float = 0.04
@@ -48,6 +56,13 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var pattern_chain_recovery_multiplier: float = 0.45
 @export var pattern_abort_distance: float = 4.8
 
+@export_group("Fast Combo Finishers")
+@export var fast_combo_heavy_finish_weight: float = 75.0
+@export var fast_combo_grab_finish_weight: float = 15.0
+@export var fast_combo_slam_finish_weight: float = 10.0
+@export var suppress_dangerous_finisher_after_dangerous_outcome: bool = true
+@export var fast_combo_finisher_transition_time: float = 0.32
+
 @export_group("Telegraph Tracking")
 @export var telegraph_tracking_enabled: bool = true
 @export var fast_slash_telegraph_tracking_turn_speed: float = 2.2
@@ -55,6 +70,14 @@ enum DistanceBand { CLOSE, MID, FAR }
 @export var grab_telegraph_tracking_turn_speed: float = 1.6
 @export var armor_slam_telegraph_tracking_turn_speed: float = 0.0
 @export var retreat_slash_telegraph_tracking_turn_speed: float = 2.2
+
+@export_group("Floor Telegraph Visuals")
+@export_enum("FULL_DEBUG", "MINIMAL", "OFF") var floor_telegraph_visual_mode: int = TelegraphVisualMode.FULL_DEBUG
+@export var floor_telegraph_toggle_enabled: bool = true
+@export var floor_telegraph_toggle_action: StringName = &"toggle_floor_telegraph_mode"
+@export var minimal_telegraph_color: Color = Color(0.72, 0.76, 0.78, 0.22)
+@export var minimal_telegraph_emission_energy: float = 0.12
+@export var minimal_telegraph_scale_multiplier: float = 1.0
 
 @export_group("Fast Slash")
 @export var fast_slash_range: float = 1.75
@@ -225,6 +248,7 @@ var _pattern_steps: Array[int] = []
 var _pattern_step_index: int = 0
 var _pattern_active: bool = false
 var _last_attack_pattern: int = -1
+var _last_dangerous_outcome_attack_type: int = -1
 var _recent_attack_patterns: Array[int] = []
 var _last_ai_distance_band: int = DistanceBand.CLOSE
 var _attack_damaged_targets: Array[Node] = []
@@ -239,6 +263,8 @@ var _flow_tracker: FlowTracker
 var _combat_ui: CombatUI
 var _pose_tween: Tween
 var _body_base_scale: Vector3 = Vector3.ONE
+var _body_base_position: Vector3 = Vector3.ZERO
+var _body_base_rotation_degrees: Vector3 = Vector3.ZERO
 
 func _ready() -> void:
 	_resolve_hit_stop()
@@ -252,6 +278,14 @@ func _ready() -> void:
 	_set_attack_hitbox_enabled(false)
 	_hide_attack_telegraph()
 	reset_attack_pose(false)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not floor_telegraph_toggle_enabled:
+		return
+	if not InputMap.has_action(floor_telegraph_toggle_action):
+		return
+	if event.is_action_pressed(floor_telegraph_toggle_action):
+		cycle_floor_telegraph_visual_mode()
 
 func _physics_process(delta: float) -> void:
 	if not _ai_enabled:
@@ -427,6 +461,7 @@ func _start_attack_pattern(distance_to_target: float) -> void:
 	_current_attack_pattern = _select_attack_pattern(distance_to_target)
 	_remember_attack_pattern(_current_attack_pattern)
 	_pattern_steps = _get_pattern_steps(_current_attack_pattern)
+	_remember_dangerous_outcome_from_steps(_pattern_steps)
 	_pattern_step_index = 0
 	_pattern_active = true
 
@@ -519,7 +554,8 @@ func _advance_attack_pattern() -> void:
 		_enter_pattern_recovery()
 		return
 
-	var interval := _get_current_pattern_step_interval()
+	var next_attack_type := _pattern_steps[_pattern_step_index]
+	var interval := _get_pattern_gap_before_step(next_attack_type)
 	if interval <= 0.0:
 		_start_current_pattern_step()
 		return
@@ -528,7 +564,24 @@ func _advance_attack_pattern() -> void:
 	_state_time_remaining = interval
 	_set_attack_hitbox_enabled(false)
 	_hide_attack_telegraph()
-	reset_attack_pose(true)
+	if _should_preview_fast_combo_finisher(next_attack_type):
+		_set_fast_combo_finisher_transition_pose(next_attack_type)
+	else:
+		reset_attack_pose(true)
+	_apply_body_debug_color()
+
+func _get_pattern_gap_before_step(next_attack_type: int) -> float:
+	if _should_preview_fast_combo_finisher(next_attack_type):
+		return maxf(0.0, fast_combo_finisher_transition_time)
+
+	return _get_current_pattern_step_interval()
+
+func _should_preview_fast_combo_finisher(next_attack_type: int) -> bool:
+	return _current_attack_pattern == AttackPattern.FAST_COMBO and _pattern_step_index == 3 and next_attack_type != AttackType.FAST_SLASH
+
+func _set_fast_combo_finisher_transition_pose(attack_type: int) -> void:
+	_current_attack_type = attack_type
+	_set_attack_pose(attack_type, false)
 
 func _get_current_pattern_chain_recovery_multiplier() -> float:
 	if not _has_next_pattern_step():
@@ -757,6 +810,10 @@ func _spawn_hit_vfx_for_target(target: Node) -> void:
 
 func _show_attack_telegraph() -> void:
 	if attack_telegraph == null:
+		return
+
+	if floor_telegraph_visual_mode == TelegraphVisualMode.OFF:
+		attack_telegraph.visible = false
 		return
 
 	_update_attack_telegraph_transform()
@@ -1058,6 +1115,14 @@ func _apply_pattern_weight_modifiers(pattern: int, weight: float, anti_parry_act
 			AttackPattern.FAST_COMBO, AttackPattern.SIMPLE_PRESSURE:
 				modified_weight *= anti_aggression_weight_bonus
 
+	if _is_target_blood_scent_active():
+		match pattern:
+			AttackPattern.FAST_COMBO, AttackPattern.SIMPLE_PRESSURE:
+				modified_weight *= blood_scent_pressure_weight_bonus
+
+	if _should_suppress_dangerous_outcome() and _is_dangerous_attack_pattern(pattern):
+		modified_weight *= maxf(0.0, dangerous_outcome_repeat_weight_multiplier)
+
 	return modified_weight
 
 func _get_pattern_memory_multiplier(pattern: int) -> float:
@@ -1133,6 +1198,12 @@ func _is_target_attack_aggressive() -> bool:
 	var attack_count := int(_target.call("get_recent_attack_count", aggression_check_window))
 	return attack_count >= aggression_attack_count_threshold
 
+func _is_target_blood_scent_active() -> bool:
+	if _target == null or not is_instance_valid(_target) or not _target.has_method("is_blood_scent_active"):
+		return false
+
+	return bool(_target.call("is_blood_scent_active"))
+
 func _debug_log_selected_pattern() -> void:
 	if not debug_log_attack_patterns and not show_ai_debug_text:
 		return
@@ -1142,6 +1213,8 @@ func _debug_log_selected_pattern() -> void:
 		tags.append("anti-parry")
 	if _is_target_attack_aggressive():
 		tags.append("anti-aggression")
+	if _is_target_blood_scent_active():
+		tags.append("blood-scent")
 
 	var context := ""
 	if not tags.is_empty():
@@ -1156,26 +1229,99 @@ func _get_pattern_steps(pattern: int) -> Array[int]:
 	var steps: Array[int] = []
 	match pattern:
 		AttackPattern.FAST_COMBO:
+			# Keep the existing three-hit Deflect rhythm, then branch into a readable finisher.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.FAST_SLASH)
-			steps.append(AttackType.DELAYED_HEAVY)
+			steps.append(_get_fast_combo_finisher_attack_type())
 		AttackPattern.GRAB_MIX:
+			# Early parry-habit punishment: short fast slash into grab.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.GRAB)
 
 		AttackPattern.PRESSURE_INTO_SLAM:
+			# Short pressure into armor punishment; keep separate from Fast Combo finishers.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.ARMOR_SLAM)
 
 		AttackPattern.SLASH_SLAM_MIX:
+			# Compact anti-mash / anti-blind-parry route; weight remains tunable.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.ARMOR_SLAM)
 		_:
+			# Simple Pressure stays intentionally short.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.FAST_SLASH)
 	return steps
+
+func _get_fast_combo_finisher_attack_type() -> int:
+	match _select_fast_combo_finisher():
+		FastComboFinisher.GRAB_FINISH:
+			return AttackType.GRAB
+		FastComboFinisher.SLAM_FINISH:
+			return AttackType.ARMOR_SLAM
+		_:
+			return AttackType.DELAYED_HEAVY
+
+func _select_fast_combo_finisher() -> int:
+	if _should_force_safe_fast_combo_finisher():
+		return FastComboFinisher.HEAVY_FINISH
+
+	var options: Array[Dictionary] = []
+	_append_fast_combo_finisher_option(options, FastComboFinisher.HEAVY_FINISH, fast_combo_heavy_finish_weight)
+	_append_fast_combo_finisher_option(options, FastComboFinisher.GRAB_FINISH, fast_combo_grab_finish_weight)
+	_append_fast_combo_finisher_option(options, FastComboFinisher.SLAM_FINISH, fast_combo_slam_finish_weight)
+
+	if options.is_empty():
+		return FastComboFinisher.HEAVY_FINISH
+
+	return _pick_weighted_fast_combo_finisher(options)
+
+func _append_fast_combo_finisher_option(options: Array[Dictionary], finisher: int, weight: float) -> void:
+	if weight <= 0.0:
+		return
+
+	options.append({ "finisher": finisher, "weight": weight })
+
+func _pick_weighted_fast_combo_finisher(options: Array[Dictionary]) -> int:
+	var total_weight := 0.0
+	for option in options:
+		total_weight += option["weight"] as float
+
+	if total_weight <= 0.0:
+		return FastComboFinisher.HEAVY_FINISH
+
+	var roll := randf() * total_weight
+	for option in options:
+		roll -= option["weight"] as float
+		if roll <= 0.0:
+			return option["finisher"] as int
+
+	return options.back()["finisher"] as int
+
+func _should_force_safe_fast_combo_finisher() -> bool:
+	return suppress_dangerous_finisher_after_dangerous_outcome and _should_suppress_dangerous_outcome()
+
+func _should_suppress_dangerous_outcome() -> bool:
+	return _is_dangerous_attack_type(_last_dangerous_outcome_attack_type)
+
+func _is_dangerous_attack_pattern(pattern: int) -> bool:
+	match pattern:
+		AttackPattern.GRAB_MIX, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX:
+			return true
+		_:
+			return false
+
+func _remember_dangerous_outcome_from_steps(steps: Array[int]) -> void:
+	_last_dangerous_outcome_attack_type = -1
+	for step in steps:
+		if _is_dangerous_attack_type(step):
+			_last_dangerous_outcome_attack_type = step
+			return
+
+func _is_dangerous_attack_type(attack_type: int) -> bool:
+	return attack_type == AttackType.GRAB or attack_type == AttackType.ARMOR_SLAM
 
 func _get_pattern_first_attack(_pattern: int) -> int:
 	return AttackType.FAST_SLASH
@@ -1408,17 +1554,25 @@ func _get_attack_radius(attack_type: int) -> float:
 			return fast_slash_radius
 
 func _get_current_telegraph_scale() -> Vector3:
+	var scale := Vector3.ONE
 	match _current_attack_type:
 		AttackType.ARMOR_SLAM:
-			return Vector3(armor_slam_radius * 1.22, 1.0, armor_slam_radius * 1.22)
+			scale = Vector3(armor_slam_radius * 1.22, 1.0, armor_slam_radius * 1.22)
 		AttackType.RETREAT_SLASH:
-			return Vector3(retreat_slash_radius * 0.9, 1.0, retreat_slash_radius * 0.72)
+			scale = Vector3(retreat_slash_radius * 0.9, 1.0, retreat_slash_radius * 0.72)
 		AttackType.DELAYED_HEAVY:
-			return Vector3(delayed_heavy_radius * 1.15, 1.0, delayed_heavy_radius * 1.15)
+			scale = Vector3(delayed_heavy_radius * 1.15, 1.0, delayed_heavy_radius * 1.15)
 		AttackType.GRAB:
-			return Vector3(grab_radius * 0.82, 1.0, grab_radius * 1.35)
+			scale = Vector3(grab_radius * 0.82, 1.0, grab_radius * 1.35)
 		_:
-			return Vector3(fast_slash_radius, 1.0, fast_slash_radius * 0.9)
+			scale = Vector3(fast_slash_radius, 1.0, fast_slash_radius * 0.9)
+
+	if floor_telegraph_visual_mode == TelegraphVisualMode.MINIMAL:
+		var multiplier := maxf(0.0, minimal_telegraph_scale_multiplier)
+		scale.x *= multiplier
+		scale.z *= multiplier
+
+	return scale
 
 
 func _get_current_attack_telegraph_color() -> Color:
@@ -1473,6 +1627,8 @@ func _setup_body_material() -> void:
 		return
 
 	_body_base_scale = body_mesh.scale
+	_body_base_position = body_mesh.position
+	_body_base_rotation_degrees = body_mesh.rotation_degrees
 	var material := body_mesh.get_active_material(0)
 	if material is StandardMaterial3D:
 		_body_material = (material as StandardMaterial3D).duplicate() as StandardMaterial3D
@@ -1495,14 +1651,18 @@ func _apply_telegraph_color() -> void:
 		return
 
 	var color := _get_current_attack_telegraph_color()
+	var emission_energy := 0.4
+	if floor_telegraph_visual_mode == TelegraphVisualMode.MINIMAL:
+		color = minimal_telegraph_color
+		emission_energy = maxf(0.0, minimal_telegraph_emission_energy)
+	elif _current_attack_type == AttackType.ARMOR_SLAM:
+		emission_energy = 0.85
+	elif _current_attack_type == AttackType.DELAYED_HEAVY:
+		emission_energy = 0.65
+
 	_telegraph_material.albedo_color = color
 	_telegraph_material.emission = Color(color.r, color.g, color.b, 1.0)
-	if _current_attack_type == AttackType.ARMOR_SLAM:
-		_telegraph_material.emission_energy_multiplier = 0.85
-	elif _current_attack_type == AttackType.DELAYED_HEAVY:
-		_telegraph_material.emission_energy_multiplier = 0.65
-	else:
-		_telegraph_material.emission_energy_multiplier = 0.4
+	_telegraph_material.emission_energy_multiplier = emission_energy
 
 func _apply_body_debug_color() -> void:
 	if _body_material == null:
@@ -1510,10 +1670,21 @@ func _apply_body_debug_color() -> void:
 
 	if _state == EnemyState.STUNNED:
 		_body_material.albedo_color = stunned_body_color
-	elif _current_attack_type == AttackType.ARMOR_SLAM and (_state == EnemyState.TELEGRAPH or _state == EnemyState.ACTIVE):
+		_body_material.emission_enabled = true
+		_body_material.emission = Color(stunned_body_color.r, stunned_body_color.g, stunned_body_color.b, 1.0)
+		_body_material.emission_energy_multiplier = 0.18
+	elif _current_attack_type == AttackType.ARMOR_SLAM and (_state == EnemyState.TELEGRAPH or _state == EnemyState.ACTIVE or _is_fast_combo_finisher_transition_active()):
 		_body_material.albedo_color = armor_slam_body_color
+		_body_material.emission_enabled = true
+		_body_material.emission = Color(armor_slam_body_color.r, armor_slam_body_color.g, armor_slam_body_color.b, 1.0)
+		_body_material.emission_energy_multiplier = 0.42
 	else:
 		_body_material.albedo_color = normal_body_color
+		_body_material.emission_enabled = false
+		_body_material.emission_energy_multiplier = 0.0
+
+func _is_fast_combo_finisher_transition_active() -> bool:
+	return _state == EnemyState.PATTERN_GAP and _pattern_active and _current_attack_pattern == AttackPattern.FAST_COMBO and _pattern_step_index == 3
 
 func _can_current_attack_be_interrupted(attack_name: StringName) -> bool:
 	if not _get_current_attack_interruptible():
@@ -1583,34 +1754,34 @@ func _get_current_attack_interrupt_stun_duration() -> float:
 func _set_attack_pose(attack_type: int, is_active: bool) -> void:
 	var duration := pose_tween_time
 	_begin_pose_change(duration)
-	_apply_body_scale(attack_type == AttackType.ARMOR_SLAM)
+	_apply_body_visual_pose(attack_type, is_active, duration)
 
 	match attack_type:
 		AttackType.ARMOR_SLAM:
 			if is_active:
-				_apply_pose_values(Vector3(0.32, 1.02, -0.54), Vector3(82, 0, -20), Vector3(-0.34, 1.02, -0.52), Vector3(82, 0, 20), Vector3(0.0, 0.74, -0.72), Vector3(96, 0, 0), true, duration)
+				_apply_pose_values(Vector3(0.34, 0.88, -0.64), Vector3(88, 0, -22), Vector3(-0.34, 0.88, -0.62), Vector3(88, 0, 22), Vector3(0.0, 0.62, -0.82), Vector3(104, 0, 0), true, duration)
 			else:
-				_apply_pose_values(Vector3(0.46, 1.78, 0.06), Vector3(-86, -12, -28), Vector3(-0.42, 1.62, 0.02), Vector3(-78, 12, 26), Vector3(0.18, 2.05, 0.16), Vector3(-88, 0, -12), true, duration)
+				_apply_pose_values(Vector3(0.48, 1.92, 0.12), Vector3(-98, -12, -30), Vector3(-0.44, 1.76, 0.08), Vector3(-88, 12, 28), Vector3(0.18, 2.26, 0.22), Vector3(-104, 0, -12), true, duration)
 		AttackType.RETREAT_SLASH:
 			if is_active:
 				_apply_pose_values(Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, duration)
 			else:
-				_apply_pose_values(Vector3(0.5, 1.0, 0.22), Vector3(-8, -68, -10), Vector3(-0.44, 1.0, -0.08), Vector3(18, 0, 16), Vector3(0.82, 0.98, 0.08), Vector3(-12, -76, -8), true, duration)
+				_apply_pose_values(Vector3(0.54, 1.02, 0.28), Vector3(-10, -76, -10), Vector3(-0.46, 1.0, -0.04), Vector3(16, 0, 16), Vector3(0.9, 1.0, 0.1), Vector3(-12, -84, -8), true, duration)
 		AttackType.DELAYED_HEAVY:
 			if is_active:
-				_apply_pose_values(Vector3(0.18, 1.22, -0.58), Vector3(48, -18, -42), Vector3(-0.38, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.12, 1.05, -0.98), Vector3(82, 36, -36), true, duration)
+				_apply_pose_values(Vector3(0.2, 1.06, -0.7), Vector3(58, -18, -46), Vector3(-0.4, 0.94, -0.22), Vector3(18, 0, 12), Vector3(0.08, 0.92, -1.08), Vector3(92, 38, -40), true, duration)
 			else:
-				_apply_pose_values(Vector3(0.5, 1.48, 0.12), Vector3(-58, -22, -24), Vector3(-0.42, 1.08, -0.18), Vector3(18, 0, 12), Vector3(0.52, 1.82, 0.22), Vector3(-70, -18, -22), true, duration)
+				_apply_pose_values(Vector3(0.56, 1.58, 0.18), Vector3(-72, -28, -28), Vector3(-0.44, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.66, 2.08, 0.28), Vector3(-98, -22, -24), true, duration)
 		AttackType.GRAB:
 			if is_active:
-				_apply_pose_values(Vector3(0.28, 1.08, -0.68), Vector3(72, 0, -16), Vector3(-0.28, 1.08, -0.78), Vector3(76, 0, 16), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, duration)
+				_apply_pose_values(Vector3(0.28, 1.08, -0.8), Vector3(82, 0, -16), Vector3(-0.28, 1.08, -0.86), Vector3(86, 0, 16), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, duration)
 			else:
-				_apply_pose_values(Vector3(0.36, 1.08, -0.32), Vector3(45, 0, -14), Vector3(-0.22, 1.12, -0.56), Vector3(62, 0, 18), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, duration)
+				_apply_pose_values(Vector3(0.34, 1.06, -0.5), Vector3(58, 0, -14), Vector3(-0.24, 1.1, -0.62), Vector3(70, 0, 18), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, duration)
 		_:
 			if is_active:
-				_apply_pose_values(Vector3(0.22, 1.12, -0.5), Vector3(35, 36, -28), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.1, 1.12, -0.88), Vector3(68, 62, -18), true, duration)
+				_apply_pose_values(Vector3(0.24, 1.04, -0.52), Vector3(40, 42, -30), Vector3(-0.42, 1.0, -0.14), Vector3(18, 0, 12), Vector3(0.08, 1.04, -0.9), Vector3(72, 68, -18), true, duration)
 			else:
-				_apply_pose_values(Vector3(0.5, 1.08, 0.02), Vector3(-14, -24, -12), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.68, 1.08, -0.1), Vector3(-18, -28, -12), true, duration)
+				_apply_pose_values(Vector3(0.56, 1.02, 0.06), Vector3(-8, -56, -10), Vector3(-0.42, 1.0, -0.12), Vector3(16, 0, 12), Vector3(0.82, 1.0, -0.04), Vector3(-10, -62, -10), true, duration)
 
 func _update_telegraph_pose_progress() -> void:
 	if not telegraph_pose_progress_enabled:
@@ -1623,19 +1794,19 @@ func _update_telegraph_pose_progress() -> void:
 	var progress := clampf(_current_attack_telegraph_elapsed / telegraph_time, 0.0, 1.0)
 	progress = progress * progress * (3.0 - 2.0 * progress)
 	_begin_pose_change(0.0)
-	_apply_body_scale(_current_attack_type == AttackType.ARMOR_SLAM)
+	_apply_body_visual_pose_progress(_current_attack_type, progress)
 
 	match _current_attack_type:
 		AttackType.ARMOR_SLAM:
-			_apply_pose_progress(Vector3(0.46, 1.78, 0.06), Vector3(-86, -12, -28), Vector3(-0.42, 1.62, 0.02), Vector3(-78, 12, 26), Vector3(0.18, 2.05, 0.16), Vector3(-88, 0, -12), true, Vector3(0.32, 1.02, -0.54), Vector3(82, 0, -20), Vector3(-0.34, 1.02, -0.52), Vector3(82, 0, 20), Vector3(0.0, 0.74, -0.72), Vector3(96, 0, 0), true, progress)
+			_apply_pose_progress(Vector3(0.48, 1.92, 0.12), Vector3(-98, -12, -30), Vector3(-0.44, 1.76, 0.08), Vector3(-88, 12, 28), Vector3(0.18, 2.26, 0.22), Vector3(-104, 0, -12), true, Vector3(0.34, 0.88, -0.64), Vector3(88, 0, -22), Vector3(-0.34, 0.88, -0.62), Vector3(88, 0, 22), Vector3(0.0, 0.62, -0.82), Vector3(104, 0, 0), true, progress)
 		AttackType.RETREAT_SLASH:
-			_apply_pose_progress(Vector3(0.5, 1.0, 0.22), Vector3(-8, -68, -10), Vector3(-0.44, 1.0, -0.08), Vector3(18, 0, 16), Vector3(0.82, 0.98, 0.08), Vector3(-12, -76, -8), true, Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, progress)
+			_apply_pose_progress(Vector3(0.54, 1.02, 0.28), Vector3(-10, -76, -10), Vector3(-0.46, 1.0, -0.04), Vector3(16, 0, 16), Vector3(0.9, 1.0, 0.1), Vector3(-12, -84, -8), true, Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, progress)
 		AttackType.DELAYED_HEAVY:
-			_apply_pose_progress(Vector3(0.5, 1.48, 0.12), Vector3(-58, -22, -24), Vector3(-0.42, 1.08, -0.18), Vector3(18, 0, 12), Vector3(0.52, 1.82, 0.22), Vector3(-70, -18, -22), true, Vector3(0.18, 1.22, -0.58), Vector3(48, -18, -42), Vector3(-0.38, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.12, 1.05, -0.98), Vector3(82, 36, -36), true, progress)
+			_apply_pose_progress(Vector3(0.56, 1.58, 0.18), Vector3(-72, -28, -28), Vector3(-0.44, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.66, 2.08, 0.28), Vector3(-98, -22, -24), true, Vector3(0.2, 1.06, -0.7), Vector3(58, -18, -46), Vector3(-0.4, 0.94, -0.22), Vector3(18, 0, 12), Vector3(0.08, 0.92, -1.08), Vector3(92, 38, -40), true, progress)
 		AttackType.GRAB:
-			_apply_pose_progress(Vector3(0.36, 1.08, -0.32), Vector3(45, 0, -14), Vector3(-0.22, 1.12, -0.56), Vector3(62, 0, 18), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, Vector3(0.28, 1.08, -0.68), Vector3(72, 0, -16), Vector3(-0.28, 1.08, -0.78), Vector3(76, 0, 16), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, progress)
+			_apply_pose_progress(Vector3(0.34, 1.06, -0.5), Vector3(58, 0, -14), Vector3(-0.24, 1.1, -0.62), Vector3(70, 0, 18), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, Vector3(0.28, 1.08, -0.8), Vector3(82, 0, -16), Vector3(-0.28, 1.08, -0.86), Vector3(86, 0, 16), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, false, progress)
 		_:
-			_apply_pose_progress(Vector3(0.5, 1.08, 0.02), Vector3(-14, -24, -12), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.68, 1.08, -0.1), Vector3(-18, -28, -12), true, Vector3(0.22, 1.12, -0.5), Vector3(35, 36, -28), Vector3(-0.42, 1.02, -0.14), Vector3(18, 0, 12), Vector3(0.1, 1.12, -0.88), Vector3(68, 62, -18), true, progress)
+			_apply_pose_progress(Vector3(0.56, 1.02, 0.06), Vector3(-8, -56, -10), Vector3(-0.42, 1.0, -0.12), Vector3(16, 0, 12), Vector3(0.82, 1.0, -0.04), Vector3(-10, -62, -10), true, Vector3(0.24, 1.04, -0.52), Vector3(40, 42, -30), Vector3(-0.42, 1.0, -0.14), Vector3(18, 0, 12), Vector3(0.08, 1.04, -0.9), Vector3(72, 68, -18), true, progress)
 
 func _apply_pose_progress(
 	right_start_position: Vector3,
@@ -1664,17 +1835,67 @@ func _apply_pose_progress(
 		weapon_start_visible or weapon_end_visible,
 		0.0
 	)
+
 func reset_attack_pose(use_tween: bool = false) -> void:
 	var duration := pose_tween_time if use_tween else 0.0
 	_begin_pose_change(duration)
-	_apply_body_scale(false)
+	_apply_body_visual_neutral(duration)
 	_apply_pose_values(Vector3(0.55, 0.78, -0.02), Vector3(90, 0, 0), Vector3(-0.55, 0.78, -0.02), Vector3(90, 0, 0), Vector3(0.66, 0.7, -0.08), Vector3(90, 0, 0), true, duration)
 
-func _apply_body_scale(use_armor_scale: bool) -> void:
+func _apply_body_visual_neutral(duration: float) -> void:
 	if body_mesh == null:
 		return
 
-	body_mesh.scale = _body_base_scale * armor_slam_body_scale if use_armor_scale else _body_base_scale
+	body_mesh.scale = _body_base_scale
+	_move_pose_node(body_mesh, _body_base_position, _body_base_rotation_degrees, true, duration)
+
+func _apply_body_visual_pose(attack_type: int, is_active: bool, duration: float) -> void:
+	if body_mesh == null:
+		return
+
+	var body_pose := _get_body_visual_pose(attack_type, is_active)
+	body_mesh.scale = _body_base_scale * (armor_slam_body_scale if attack_type == AttackType.ARMOR_SLAM else 1.0)
+	_move_pose_node(body_mesh, body_pose["position"] as Vector3, body_pose["rotation_degrees"] as Vector3, true, duration)
+
+func _apply_body_visual_pose_progress(attack_type: int, progress: float) -> void:
+	if body_mesh == null:
+		return
+
+	var start_pose := _get_body_visual_pose(attack_type, false)
+	var end_pose := _get_body_visual_pose(attack_type, true)
+	body_mesh.scale = _body_base_scale * (armor_slam_body_scale if attack_type == AttackType.ARMOR_SLAM else 1.0)
+	_move_pose_node(
+		body_mesh,
+		(start_pose["position"] as Vector3).lerp(end_pose["position"] as Vector3, progress),
+		(start_pose["rotation_degrees"] as Vector3).lerp(end_pose["rotation_degrees"] as Vector3, progress),
+		true,
+		0.0
+	)
+
+func _get_body_visual_pose(attack_type: int, is_active: bool) -> Dictionary:
+	var position := _body_base_position
+	var rotation := _body_base_rotation_degrees
+	match attack_type:
+		AttackType.ARMOR_SLAM:
+			position += Vector3(0.0, -0.18, -0.08) if is_active else Vector3(0.0, -0.13, 0.04)
+			rotation += Vector3(12, 0, 0) if is_active else Vector3(-16, 0, -3)
+		AttackType.RETREAT_SLASH:
+			position += Vector3(0.0, -0.03, 0.08) if is_active else Vector3(0.0, -0.02, 0.16)
+			rotation += Vector3(3, 0, 6) if is_active else Vector3(-5, 0, 8)
+		AttackType.DELAYED_HEAVY:
+			position += Vector3(0.04, -0.1, -0.1) if is_active else Vector3(0.06, -0.12, 0.08)
+			rotation += Vector3(10, 0, -7) if is_active else Vector3(-13, 0, -9)
+		AttackType.GRAB:
+			position += Vector3(0.0, -0.06, -0.18) if is_active else Vector3(0.0, -0.04, -0.1)
+			rotation += Vector3(13, 0, 0) if is_active else Vector3(7, 0, 0)
+		_:
+			position += Vector3(0.04, -0.03, -0.06) if is_active else Vector3(0.05, -0.02, 0.02)
+			rotation += Vector3(4, 0, -6) if is_active else Vector3(-2, 0, -5)
+
+	return {
+		"position": position,
+		"rotation_degrees": rotation
+	}
 
 func _begin_pose_change(duration: float) -> void:
 	if _pose_tween != null and _pose_tween.is_valid():
@@ -1735,6 +1956,29 @@ func get_debug_state_text() -> String:
 
 	return state_text
 
+func cycle_floor_telegraph_visual_mode() -> void:
+	var next_mode := int(floor_telegraph_visual_mode) + 1
+	if next_mode > TelegraphVisualMode.OFF:
+		next_mode = TelegraphVisualMode.FULL_DEBUG
+
+	set_floor_telegraph_visual_mode(next_mode)
+
+func set_floor_telegraph_visual_mode(mode: int) -> void:
+	floor_telegraph_visual_mode = clampi(mode, TelegraphVisualMode.FULL_DEBUG, TelegraphVisualMode.OFF)
+	if _state == EnemyState.TELEGRAPH:
+		_show_attack_telegraph()
+	else:
+		_hide_attack_telegraph()
+
+func get_floor_telegraph_visual_mode_name() -> String:
+	match floor_telegraph_visual_mode:
+		TelegraphVisualMode.MINIMAL:
+			return "MINIMAL"
+		TelegraphVisualMode.OFF:
+			return "OFF"
+		_:
+			return "FULL_DEBUG"
+
 func _get_enemy_state_name(state: int) -> String:
 	match state:
 		EnemyState.TELEGRAPH:
@@ -1782,6 +2026,7 @@ func reset_combat_state() -> void:
 	_retreat_distance_remaining = 0.0
 	_clear_attack_pattern_state()
 	_last_attack_pattern = -1
+	_last_dangerous_outcome_attack_type = -1
 	_recent_attack_patterns.clear()
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()

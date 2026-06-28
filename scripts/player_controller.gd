@@ -13,6 +13,10 @@ signal just_dodge_counter_hit
 signal vesper_art_used
 signal vesper_art_hit
 signal vesper_art_missed
+signal blood_rend_used
+signal blood_rend_hit(blood_cost: float)
+signal blood_scent_success
+signal blood_scent_hit_taken
 
 enum AttackPhase { NONE, WINDUP, ACTIVE, RECOVERY }
 enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
@@ -190,6 +194,26 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export var vesper_art_hit_message: String = "VESPER ART!"
 @export var vesper_art_message_duration: float = 0.65
 
+
+@export_group("Blood Rend / Blood Scent")
+@export var blood_rend_damage: float = 12.0
+@export var blood_rend_self_damage: float = 8.0
+@export var blood_rend_range: float = 2.0
+@export var blood_rend_radius: float = 1.0
+@export var blood_rend_ready_duration: float = 0.8
+@export var blood_scent_duration: float = 6.0
+@export var blood_rend_min_survive_hp: float = 1.0
+@export var blood_rend_windup: float = 0.08
+@export var blood_rend_active: float = 0.12
+@export var blood_rend_recovery: float = 0.24
+@export var blood_rend_hit_stop_duration: float = 0.08
+@export var blood_rend_camera_shake_strength: float = 0.14
+@export var blood_rend_camera_shake_duration: float = 0.10
+@export var blood_rend_vfx_scale: float = 1.15
+@export var blood_rend_ready_message: String = "BLOOD REND READY (Q)"
+@export var blood_rend_hit_message: String = "BLOOD REND!"
+@export var blood_rend_blocked_message: String = "TOO LITTLE HP"
+@export var blood_rend_message_duration: float = 0.55
 @export_group("Combo")
 @export var combo_tracker_path: NodePath
 
@@ -242,6 +266,9 @@ var _deflect_count: int = 0
 var _normal_parry_count: int = 0
 var _parry_fail_count: int = 0
 var _last_parry_result: String = "None"
+var _blood_rend_ready_time_remaining: float = 0.0
+var _blood_scent_time_remaining: float = 0.0
+var _blood_rend_self_damage_pending: float = 0.0
 
 func _ready() -> void:
 	_last_health_value = health.current_health
@@ -261,6 +288,8 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_update_riposte_ready(delta)
 	_update_just_dodge_counter_ready(delta)
+	_update_blood_rend_ready(delta)
+	_update_blood_scent(delta)
 	_update_deflect_chain(delta)
 	if health.is_dead() or not _controls_enabled:
 		velocity = Vector3.ZERO
@@ -301,6 +330,9 @@ func _handle_actions() -> void:
 	if Input.is_action_just_pressed("parry"):
 		_try_parry()
 
+	if Input.is_action_just_pressed("blood_rend"):
+		_try_blood_rend_attack()
+
 	if Input.is_action_just_pressed("light_attack"):
 		if _is_just_dodge_counter_ready():
 			_try_just_dodge_counter_attack()
@@ -335,6 +367,22 @@ func _update_just_dodge_counter_ready(delta: float) -> void:
 		_just_dodge_counter_recent_time_remaining = maxf(0.0, _just_dodge_counter_recent_time_remaining - delta)
 
 	if was_ready and not _is_just_dodge_counter_ready():
+		_apply_debug_color()
+
+func _update_blood_rend_ready(delta: float) -> void:
+	var was_ready := is_blood_rend_ready()
+	if _blood_rend_ready_time_remaining > 0.0:
+		_blood_rend_ready_time_remaining = maxf(0.0, _blood_rend_ready_time_remaining - delta)
+
+	if was_ready and not is_blood_rend_ready():
+		_apply_debug_color()
+
+func _update_blood_scent(delta: float) -> void:
+	if _blood_scent_time_remaining <= 0.0:
+		return
+
+	_blood_scent_time_remaining = maxf(0.0, _blood_scent_time_remaining - delta)
+	if _blood_scent_time_remaining <= 0.0:
 		_apply_debug_color()
 
 func _update_attack_state(delta: float) -> void:
@@ -516,6 +564,18 @@ func get_just_dodge_counter_time_remaining() -> float:
 func was_just_dodge_counter_recently_used() -> bool:
 	return _just_dodge_counter_recent_time_remaining > 0.0
 
+func is_blood_rend_ready() -> bool:
+	return _blood_rend_ready_time_remaining > 0.0 and not health.is_dead() and _controls_enabled
+
+func get_blood_rend_ready_time_remaining() -> float:
+	return _blood_rend_ready_time_remaining if is_blood_rend_ready() else 0.0
+
+func is_blood_scent_active() -> bool:
+	return _blood_scent_time_remaining > 0.0 and not health.is_dead() and _controls_enabled
+
+func get_blood_scent_time_remaining() -> float:
+	return _blood_scent_time_remaining if is_blood_scent_active() else 0.0
+
 func get_parry_stock() -> int:
 	return parry_stock
 
@@ -566,10 +626,20 @@ func get_recent_attack_count(window_seconds: float) -> int:
 
 func _on_health_changed(current_health: float, _max_health: float) -> void:
 	if current_health < _last_health_value:
-		damage_taken.emit(_last_health_value - current_health)
-		_reset_parry_reward_state()
-		_reset_deflect_state()
-		_clear_just_dodge_counter_ready()
+		var damage_delta := _last_health_value - current_health
+		var self_damage_delta := minf(damage_delta, _blood_rend_self_damage_pending)
+		_blood_rend_self_damage_pending = maxf(0.0, _blood_rend_self_damage_pending - self_damage_delta)
+		var normal_damage_delta := damage_delta - self_damage_delta
+
+		if normal_damage_delta > 0.0:
+			damage_taken.emit(normal_damage_delta)
+			if is_blood_scent_active():
+				blood_scent_hit_taken.emit()
+				_end_blood_scent()
+			_reset_parry_reward_state()
+			_reset_deflect_state()
+			_clear_just_dodge_counter_ready()
+			_clear_blood_rend_ready()
 
 	_last_health_value = current_health
 
@@ -598,6 +668,7 @@ func _on_normal_parry_success(attacker: Node, parry_response: Dictionary) -> voi
 		_grant_riposte_ready()
 	_add_combo_from_parry()
 	_add_flow_from_parry(float(parry_response.get("parry_flow_gain", 0.0)))
+	_register_blood_scent_success()
 	normal_parry_succeeded.emit()
 	parry_succeeded.emit()
 
@@ -616,6 +687,7 @@ func _on_rhythm_deflect_success(attacker: Node, parry_response: Dictionary) -> v
 	_show_deflect_message()
 	_add_combo_from_parry()
 	_add_flow_from_deflect(float(parry_response.get("deflect_flow_gain", 0.0)))
+	_register_blood_scent_success()
 	rhythm_deflect_succeeded.emit(_deflect_chain_count)
 	parry_succeeded.emit()
 
@@ -640,6 +712,7 @@ func _on_just_dodge_success(attacker: Node, impact_position: Vector3) -> void:
 	_show_just_dodge_message()
 	_add_combo_from_just_dodge()
 	_add_flow_from_just_dodge()
+	_register_blood_scent_success()
 	just_dodge_succeeded.emit()
 
 func _strike_active_attack_targets() -> void:
@@ -651,15 +724,19 @@ func _strike_active_attack_targets() -> void:
 
 	var attack_damage := _get_current_attack_damage()
 	var damaged := attack_hitbox.strike(attack_damage, self, _attack_damaged_targets)
-	if not damaged.is_empty() and _is_riposte_attack_name(_current_attack_name):
+	if not damaged.is_empty() and _is_blood_rend_attack_name(_current_attack_name):
+		_on_blood_rend_hit()
+	elif not damaged.is_empty() and _is_riposte_attack_name(_current_attack_name):
 		_add_flow_from_riposte_hit()
 		_show_riposte_hit_message()
+		_register_blood_scent_success()
 		if _current_attack_name == &"vesper_counter":
 			vesper_counter_hit.emit()
 		else:
 			riposte_hit.emit()
 	elif not damaged.is_empty() and _is_just_dodge_counter_attack_name(_current_attack_name):
 		_show_just_dodge_counter_hit_message()
+		_register_blood_scent_success()
 		just_dodge_counter_hit.emit()
 	elif not damaged.is_empty() and _is_vesper_art_attack_name(_current_attack_name):
 		_confirm_vesper_art_hit()
@@ -669,17 +746,19 @@ func _strike_active_attack_targets() -> void:
 			_attack_damaged_targets.append(target)
 			_spawn_hit_vfx_for_target(target)
 			_add_combo_from_attack_hit(target)
-			_add_flow_from_attack_hit(target)
+			if not _is_blood_rend_attack_name(_current_attack_name):
+				_add_flow_from_attack_hit(target)
 			if _is_just_dodge_counter_attack_name(_current_attack_name):
 				if target.has_method("receive_just_dodge_counter_stun"):
 					target.call("receive_just_dodge_counter_stun", just_dodge_counter_enemy_stun_time)
 				elif target.has_method("receive_parry_stun"):
 					target.call("receive_parry_stun", just_dodge_counter_enemy_stun_time)
-			elif target.has_method("receive_player_attack_hit"):
+			elif not _is_blood_rend_attack_name(_current_attack_name) and target.has_method("receive_player_attack_hit"):
 				var interrupt_attack_name := &"heavy" if _counts_as_heavy_interrupt_attack(_current_attack_name) else _current_attack_name
 				target.call("receive_player_attack_hit", interrupt_attack_name, self)
 
 	if not damaged.is_empty():
+		_grant_blood_rend_ready_from_attack_hit()
 		_request_hit_stop_for_current_attack()
 		_request_camera_shake_for_current_attack()
 
@@ -712,6 +791,9 @@ func _spawn_hit_vfx_for_target(target: Node) -> void:
 	elif _current_attack_name == &"just_dodge_counter":
 		kind = HitVfx.HitKind.JUST_DODGE
 		scale = just_dodge_counter_vfx_scale
+	elif _current_attack_name == &"blood_rend":
+		kind = HitVfx.HitKind.HEAVY
+		scale = blood_rend_vfx_scale
 
 	hit_vfx.configure(kind, scale, hit_vfx_lifetime)
 
@@ -762,8 +844,94 @@ func _get_current_attack_damage() -> float:
 		return _current_attack_damage * vesper_art_damage_multiplier
 	if _current_attack_name == &"just_dodge_counter":
 		return _current_attack_damage * just_dodge_counter_damage_multiplier
+	if _current_attack_name == &"blood_rend":
+		return _current_attack_damage
 
 	return _current_attack_damage
+
+func _try_blood_rend_attack() -> void:
+	if not is_blood_rend_ready():
+		return
+	if health.current_health <= maxf(0.0, blood_rend_min_survive_hp):
+		_show_blood_rend_blocked_message()
+		return
+	if _is_parrying() or _dodge_remaining > 0.0:
+		return
+
+	if _is_attacking():
+		_clear_attack_state()
+
+	if not _try_attack(
+		&"blood_rend",
+		blood_rend_damage,
+		blood_rend_range,
+		blood_rend_radius,
+		0.0,
+		blood_rend_windup,
+		blood_rend_active,
+		blood_rend_recovery
+	):
+		return
+
+	blood_rend_used.emit()
+	_clear_blood_rend_ready()
+
+func _on_blood_rend_hit() -> void:
+	var blood_cost := _apply_blood_rend_self_damage()
+	_start_blood_scent()
+	_clear_blood_rend_ready()
+	_show_blood_rend_hit_message()
+	blood_rend_hit.emit(blood_cost)
+
+func _apply_blood_rend_self_damage() -> float:
+	var minimum_health := maxf(0.0, blood_rend_min_survive_hp)
+	var available_health := maxf(0.0, health.current_health - minimum_health)
+	var actual_cost := minf(maxf(0.0, blood_rend_self_damage), available_health)
+	if actual_cost <= 0.0:
+		return 0.0
+
+	_blood_rend_self_damage_pending += actual_cost
+	health.take_damage(actual_cost)
+	return actual_cost
+
+func _grant_blood_rend_ready_from_attack_hit() -> void:
+	if not _can_current_attack_grant_blood_rend_ready():
+		return
+	if blood_rend_ready_duration <= 0.0:
+		_blood_rend_ready_time_remaining = 0.0
+		return
+
+	_blood_rend_ready_time_remaining = blood_rend_ready_duration
+	_show_blood_rend_ready_message()
+	_apply_debug_color()
+
+func _can_current_attack_grant_blood_rend_ready() -> bool:
+	return _current_attack_name == &"light" or _current_attack_name == &"just_dodge_counter" or _current_attack_name == &"riposte" or _current_attack_name == &"vesper_counter"
+
+func _clear_blood_rend_ready() -> void:
+	if _blood_rend_ready_time_remaining <= 0.0:
+		return
+
+	_blood_rend_ready_time_remaining = 0.0
+	_apply_debug_color()
+
+func _start_blood_scent() -> void:
+	_blood_scent_time_remaining = maxf(0.0, blood_scent_duration)
+	_apply_debug_color()
+
+func _end_blood_scent() -> void:
+	if _blood_scent_time_remaining <= 0.0:
+		return
+
+	_blood_scent_time_remaining = 0.0
+	_apply_debug_color()
+
+func _register_blood_scent_success() -> void:
+	if not is_blood_scent_active():
+		return
+
+	_add_flow_from_blood_scent_success()
+	blood_scent_success.emit()
 
 func _try_just_dodge_counter_attack() -> void:
 	if not _is_just_dodge_counter_ready():
@@ -832,6 +1000,9 @@ func _is_vesper_art_attack_name(attack_name: StringName) -> bool:
 
 func _is_just_dodge_counter_attack_name(attack_name: StringName) -> bool:
 	return attack_name == &"just_dodge_counter"
+
+func _is_blood_rend_attack_name(attack_name: StringName) -> bool:
+	return attack_name == &"blood_rend"
 
 func _counts_as_heavy_interrupt_attack(attack_name: StringName) -> bool:
 	return _is_riposte_attack_name(attack_name) or _is_vesper_art_attack_name(attack_name)
@@ -955,6 +1126,8 @@ func _request_hit_stop_for_current_attack() -> void:
 			_hit_stop.request_hit_stop(vesper_art_hit_stop)
 		&"just_dodge_counter":
 			_hit_stop.request_hit_stop(just_dodge_counter_hit_stop_duration)
+		&"blood_rend":
+			_hit_stop.request_hit_stop(blood_rend_hit_stop_duration)
 		&"heavy":
 			_hit_stop.request_heavy_attack_hit_stop()
 		_:
@@ -1010,6 +1183,8 @@ func _request_camera_shake_for_current_attack() -> void:
 			_camera_follow.request_shake(vesper_art_camera_shake, vesper_art_camera_shake_duration)
 		&"just_dodge_counter":
 			_camera_follow.request_shake(just_dodge_counter_camera_shake_strength, just_dodge_counter_camera_shake_duration)
+		&"blood_rend":
+			_camera_follow.request_shake(blood_rend_camera_shake_strength, blood_rend_camera_shake_duration)
 		&"heavy":
 			_camera_follow.request_heavy_attack_shake()
 		_:
@@ -1159,6 +1334,27 @@ func _show_just_dodge_message() -> void:
 	if _combat_ui != null:
 		_combat_ui.show_temporary_message(just_dodge_message, just_dodge_message_duration)
 
+func _show_blood_rend_ready_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(blood_rend_ready_message, blood_rend_message_duration)
+
+func _show_blood_rend_hit_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(blood_rend_hit_message, blood_rend_message_duration)
+
+func _show_blood_rend_blocked_message() -> void:
+	if _combat_ui == null or not is_instance_valid(_combat_ui):
+		_resolve_combat_ui()
+
+	if _combat_ui != null:
+		_combat_ui.show_temporary_message(blood_rend_blocked_message, blood_rend_message_duration)
+
 func _resolve_combo_tracker() -> void:
 	if combo_tracker_path != NodePath(""):
 		_combo_tracker = get_node_or_null(combo_tracker_path) as ComboTracker
@@ -1287,6 +1483,16 @@ func _add_flow_from_riposte_hit() -> void:
 		_flow_tracker.add_vesper_counter_hit_flow()
 	else:
 		_flow_tracker.add_riposte_hit_flow()
+
+func _add_flow_from_blood_scent_success() -> void:
+	if _flow_tracker == null or not is_instance_valid(_flow_tracker):
+		_resolve_flow_tracker()
+
+	if _flow_tracker == null:
+		return
+
+	if _flow_tracker.has_method("add_blood_scent_success_flow"):
+		_flow_tracker.call("add_blood_scent_success_flow")
 
 func _set_attack_hitbox_enabled(value: bool) -> void:
 	if attack_hitbox == null:
@@ -1418,6 +1624,9 @@ func set_control_enabled(value: bool) -> void:
 		_just_dodge_remaining = 0.0
 		_just_dodge_counter_time_remaining = 0.0
 		_just_dodge_counter_recent_time_remaining = 0.0
+		_blood_rend_ready_time_remaining = 0.0
+		_blood_scent_time_remaining = 0.0
+		_blood_rend_self_damage_pending = 0.0
 		velocity = Vector3.ZERO
 		_reset_parry_reward_state()
 		_reset_deflect_state()
@@ -1435,6 +1644,9 @@ func reset_combat_state() -> void:
 	_just_dodge_remaining = 0.0
 	_just_dodge_counter_time_remaining = 0.0
 	_just_dodge_counter_recent_time_remaining = 0.0
+	_blood_rend_ready_time_remaining = 0.0
+	_blood_scent_time_remaining = 0.0
+	_blood_rend_self_damage_pending = 0.0
 	_attack_direction = Vector3.FORWARD
 	_recent_attack_times.clear()
 	_reset_parry_reward_state()

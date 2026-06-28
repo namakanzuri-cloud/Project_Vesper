@@ -60,7 +60,15 @@ copy_result_log={
 "deadzone": 0.5,
 "events": []
 }
+toggle_floor_telegraph_mode={
+"deadzone": 0.5,
+"events": []
+}
 heavy_attack={
+"deadzone": 0.5,
+"events": []
+}
+blood_rend={
 "deadzone": 0.5,
 "events": []
 }

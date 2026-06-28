@@ -100,6 +100,14 @@ func _connect_combat_stats() -> void:
 		player.vesper_art_hit.connect(combat_stats.record_vesper_art_hit)
 	if not player.vesper_art_missed.is_connected(combat_stats.record_vesper_art_miss):
 		player.vesper_art_missed.connect(combat_stats.record_vesper_art_miss)
+	if not player.blood_rend_used.is_connected(combat_stats.record_blood_rend_used):
+		player.blood_rend_used.connect(combat_stats.record_blood_rend_used)
+	if not player.blood_rend_hit.is_connected(combat_stats.record_blood_rend_hit):
+		player.blood_rend_hit.connect(combat_stats.record_blood_rend_hit)
+	if not player.blood_scent_success.is_connected(combat_stats.record_blood_scent_success):
+		player.blood_scent_success.connect(combat_stats.record_blood_scent_success)
+	if not player.blood_scent_hit_taken.is_connected(combat_stats.record_blood_scent_hit_taken):
+		player.blood_scent_hit_taken.connect(combat_stats.record_blood_scent_hit_taken)
 	if not enemy.interrupt_succeeded.is_connected(combat_stats.record_interrupt):
 		enemy.interrupt_succeeded.connect(combat_stats.record_interrupt)
 	if combo_tracker != null and not combo_tracker.combo_changed.is_connected(combat_stats.record_combo_changed):

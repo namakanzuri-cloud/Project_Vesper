@@ -46,15 +46,16 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵の接近と複数攻撃パターンからの重み付き選択
 - 敵AIがプレイヤーとの距離に応じて攻撃パターンを選び分ける
 - 近距離では速い斬り、掴み、短い圧力が出やすい
-- 中距離では遅延重斬り、後退フェイント、アーマー叩きつけ絡みが出やすい
-- 遠距離では遅延重斬り、後退フェイントに候補が絞られる
-- `Parry Stock` が高いとき、敵が掴み・アーマー・フェイントを少し選びやすくなる
+- 中距離では短い圧力、アーマー叩きつけ絡みの派生が出やすい
+- 遠距離では短い圧力、アーマー叩きつけ絡みの派生に候補が絞られる
+- `Parry Stock` が高いとき、敵が掴み・アーマー系の派生を少し選びやすくなる
+- プレイヤーが短時間に攻撃を重ねた場合、敵が速い連撃・短い圧力を少し選びやすくなる
 - 同じ攻撃パターンの連発を抑える
 - 敵の速い斬り（短い予兆 / 低〜中ダメージ / パリィ可能 / 中断不可）
 - 敵の遅延重斬り（長い予兆 / 高めダメージ / パリィ可能 / 指定された予兆時間帯だけ差し込み中断可能）
 - 敵の掴み（近距離 / 中〜高ダメージ / パリィ不可 / 中断不可 / 回避や距離取りで対応）
 - 敵のアーマー叩きつけ（長い予兆 / 高ダメージ / パリィ不可 / 中断不可 / 回避後に反撃しやすい長めの後隙）
-- Blue telegraph slash: same Deflect-style attack family as fast slash, with matched timing and no retreat movement
+- 速い斬り系は青い床予兆で統一し、Deflect向けの共通タイミングとして扱う
 - 攻撃タイプごとの中断可否、差し込み可能時間帯、強攻撃要求、スタン時間の調整
 - 敵攻撃シーケンス / コンボパターン Phase 2
 - Fast Combo: 速い斬り → 速い斬り → 速い斬り → 遅延重斬り
@@ -87,7 +88,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵HP0時の勝利表示
 - 勝利時に Clear Time、Damage Taken、Hit Taken、Max Combo、Parry Count、Just Dodge Count、Interrupt Count などをまとめた簡易リザルトを表示する
 - 勝利/死亡時に直近戦闘結果ログを JSON 形式で生成し、画面の `Copy Result Log` ボタンまたは `F9` でクリップボードへコピーできる
-- Result JSON には Rank、Score、Clear Time、Damage Taken、Max Combo、Parry Count、Just Dodge Count、Interrupt Count、Vesper Art Hit などが含まれ、テストプレイ結果を共有・分析しやすい
+- Result JSON には Rank、Score、Clear Time、Damage Taken、Max Combo、Parry Count、Normal Parry Count、Deflect Count、Max Deflect Chain、Parry Fail Count、Just Dodge Count、Interrupt Count、Vesper Art Hit などが含まれ、テストプレイ結果を共有・分析しやすい
 - 戦闘内容に応じて `D` / `C` / `B` / `A` / `S` / `VESPER` のスタイルランクを表示する
 - Flow、Riposte / Vesper Counter、Just Dodge Counter、Vesper Art などの成功行動がリザルト評価に反映される
 - リトライとデバッグリセット
@@ -102,6 +103,33 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Grab and armor slam remain non-parry success cases.
 - Parry whiffs now enter a short vulnerable recovery.
 - Result / Run Log JSON now includes `rhythmParryCount`, `deflectCount`, `maxDeflectChain`, and `parryFailCount`.
+
+## Fast Combo Finisher Branch Phase 1
+
+- Fast Combo now keeps its first three fast/light Deflect hits, then branches into one readable finisher.
+- Finisher branches are weighted and tunable in `scripts/enemy_controller.gd`: delayed heavy is the default route, with grab and armor slam as blind-Parry punish routes.
+- Existing combo roles are intentionally separate: Fast Combo = Deflect showcase into finisher read, Simple Pressure = short pressure, Grab Mix = early parry-habit punishment, and slam patterns = anti-mash / anti-blind-parry punishment.
+- A short finisher transition pose appears after the third Fast Combo slash so the player can read heavy pullback, grab lean, or slam windup before the finisher telegraph resolves.
+- Fast Combo 1st-3rd hit Deflect tempo, Flow gain, Vesper Art balance, Riposte / Vesper Counter priority, player damage, stamina costs, and result scoring were not intentionally rebalanced in this phase.
+## Fast Combo Finisher Weight Tuning Phase 1
+
+- Fast Combo finisher defaults are now tuned toward Heavy Finish as the primary ending (`75 / 15 / 10` for heavy / grab / slam).
+- Grab and armor slam finishers remain available as occasional blind-Parry punish routes, but should no longer feel like the default Fast Combo ending.
+- Existing Grab Mix, Pressure into Slam, and Slash Slam Mix patterns were kept and made less frequent/tunable now that Fast Combo can also branch into grab/slam.
+- A simple dangerous-outcome suppression pass reduces repeated Grab/Slam pressure and forces the next Fast Combo finisher back to Heavy after a dangerous outcome.
+- Fast Combo 1st-3rd hit Deflect tempo, Flow, Vesper Art balance, and parry/deflect success rules were intentionally not changed.
+
+
+## Blood Rend / Blood Scent Prototype
+
+- `Q`: Blood Rend, available briefly after a normal attack hit, Just Dodge Counter hit, Riposte hit, or Vesper Counter hit.
+- Blood Rend is optional and does nothing outside the short `BLOOD REND READY (Q)` window.
+- Blood Rend damages both the enemy and the player, but self-damage is tracked as blood cost instead of normal damage taken.
+- Blood Rend self-damage cannot kill the player in this prototype; it leaves at least 1 HP.
+- A successful Blood Rend hit starts `BLOOD SCENT` for a short duration.
+- During Blood Scent, clean defensive/counter successes grant a modest Flow/style reward.
+- Taking normal enemy damage during Blood Scent ends Blood Scent immediately and still counts as bad play.
+- Result JSON includes `bloodRendUseCount`, `bloodRendHitCount`, `bloodCostTotal`, `bloodScentSuccessCount`, and `bloodScentHitTakenCount`.
 
 ## File Structure
 
@@ -153,10 +181,11 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 
 - 正式な3Dモデルやアニメーションは未実装です。
 - 敵の腕や武器はプリミティブによる仮表示です。正式モデル、正式アニメーション、武器軌跡はまだありません。
-- アーマー叩きつけや後退フェイント攻撃の構え・発光・床予兆は、仮モデル用の簡易表現です。
+- アーマー叩きつけの構え・発光・床予兆は、仮モデル用の簡易表現です。
+- 後退斬り型は `enemy_controller.gd` に定義がありますが、現行の攻撃パターンにはまだ組み込んでいません。
 - プレイヤー攻撃は、仮モデル段階の球形判定です。正式な武器軌跡や攻撃アニメーションはまだありません。
 - 敵攻撃パターンは `enemy_controller.gd` 内の仮定義です。敵AIはまだ簡易的な重み付き選択であり、正式な行動ツリーや高度な状況判断AIではありません。
-- 距離別選択、同一パターン抑制、軽い対パリィ補正は仮調整です。
+- 距離別選択、同一パターン抑制、軽い対パリィ補正、対アグレッション補正は仮調整です。
 - 攻撃判定は `CombatHitbox` の球形判定で、正式な武器軌跡はまだありません。
 - 敵攻撃予兆は、球形判定の足元投影に合わせた仮表示です。正式な扇形やアニメーション付き予兆はまだありません。
 - 複雑な行動ツリー、状況判断AI、攻撃パターンの外部データ化は未実装です。
@@ -179,6 +208,16 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - ただし、削除・移動はユーザー確認後に行う。
 
 ## 次の実装優先順位:
-1. 攻撃パターンの追加調整
-2. 敵AIの追加調整
+1. Fast Combo / Deflect テンポの追加調整
+2. Flow / Vesper Art バランス再調整
 3. リザルト評価の調整 / 専用UI検討
+
+## Enemy Motion Readability / Telegraph Debug Toggle Phase 1
+
+- Enemy floor telegraphs now have three visual modes: `FULL_DEBUG`, `MINIMAL`, and `OFF`.
+- `FULL_DEBUG` keeps the existing clear color/range language for debugging attack type behavior and hit ranges.
+- `MINIMAL` keeps the floor helper visible with a neutral, low-saturation look so attack recognition is tested from enemy pose first.
+- `OFF` hides floor telegraphs completely for readability checks based on body, arm, weapon, and stance motion.
+- `F7` cycles `FULL_DEBUG -> MINIMAL -> OFF -> FULL_DEBUG`; the current mode is shown in the combat debug HUD.
+- Floor telegraphs are now debug/assist visuals, not the intended final source of attack recognition.
+- Fast Combo / Deflect tempo, Deflect chain logic, Parry behavior, Riposte/Vesper priority, and enemy AI weights were intentionally preserved.

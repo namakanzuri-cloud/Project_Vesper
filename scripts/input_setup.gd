@@ -11,6 +11,8 @@ func _ready() -> void:
 	_add_key_action("retry", KEY_R)
 	_add_key_action("debug_reset", KEY_F5)
 	_add_key_action("copy_result_log", KEY_F9)
+	_add_key_action("toggle_floor_telegraph_mode", KEY_F7)
+	_add_key_action("blood_rend", KEY_Q)
 	_add_mouse_action("light_attack", MOUSE_BUTTON_LEFT)
 	_add_mouse_action("heavy_attack", MOUSE_BUTTON_RIGHT)
 
