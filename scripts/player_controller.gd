@@ -46,7 +46,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export_group("Just Dodge Counter")
 @export var just_dodge_counter_window: float = 0.6
 @export var just_dodge_counter_damage_multiplier: float = 1.5
-@export var just_dodge_counter_flow_gain: float = 10.0
+@export var just_dodge_counter_flow_gain: float = 12.0
 @export var just_dodge_counter_enemy_stun_time: float = 0.32
 @export var just_dodge_counter_stamina_cost: float = 0.0
 @export var just_dodge_counter_windup: float = 0.10
@@ -181,7 +181,7 @@ enum ParryPhase { NONE, STARTUP, ACTIVE, RECOVERY }
 @export_group("Vesper Art")
 @export var vesper_art_flow_cost: float = 100.0
 @export var vesper_art_damage_multiplier: float = 2.5
-@export var vesper_art_miss_flow_cost: float = 75.0
+@export var vesper_art_miss_flow_cost: float = 100.0
 @export var vesper_art_windup: float = 0.32
 @export var vesper_art_active: float = 0.22
 @export var vesper_art_recovery: float = 0.42

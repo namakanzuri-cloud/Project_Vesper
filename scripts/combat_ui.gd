@@ -29,8 +29,8 @@ class_name CombatUI
 @onready var combo_rating_label: Label = $ComboDisplay/Rating
 @onready var death_overlay: Control = $DeathOverlay
 @onready var death_title_label: Label = $DeathOverlay/Center/Box/Title
-@onready var result_summary_label: Label = $DeathOverlay/Center/Box/ResultSummary
-@onready var result_log_summary_label: Label = $DeathOverlay/Center/Box/ResultLogSummary
+@onready var result_summary_label: Label = $DeathOverlay/Center/Box/ResultScroll/ResultContent/ResultSummary
+@onready var result_log_summary_label: Label = $DeathOverlay/Center/Box/ResultScroll/ResultContent/ResultLogSummary
 @onready var copy_result_log_button: Button = $DeathOverlay/Center/Box/CopyResultLogButton
 @onready var copy_result_status_label: Label = $DeathOverlay/Center/Box/CopyResultStatus
 @onready var death_instructions_label: Label = $DeathOverlay/Center/Box/Instructions
@@ -183,6 +183,8 @@ func _update_combat_debug() -> void:
 
 	if _enemy != null and is_instance_valid(_enemy):
 		lines.append("Enemy Pattern: %s" % _enemy.get_debug_current_pattern_name())
+		if _enemy.has_method("get_debug_slam_status_text"):
+			lines.append("Enemy Slam: %s" % _enemy.get_debug_slam_status_text())
 		lines.append("Enemy Distance: %s" % _enemy.get_debug_distance_band())
 		lines.append("Enemy State: %s" % _enemy.get_debug_state_text())
 		lines.append("Floor Telegraph: %s" % _enemy.get_floor_telegraph_visual_mode_name())
@@ -200,6 +202,7 @@ func _update_combat_debug() -> void:
 		lines.append("Deflect/F/Max: %d / %d / %d" % [_combat_stats.deflect_count, _combat_stats.parry_fail_count, _combat_stats.max_deflect_chain])
 		lines.append("Score/Rank: %d / %s" % [int(round(_combat_stats.get_score())), _combat_stats.get_rank()])
 		lines.append("Vesper Art U/H/M: %d / %d / %d" % [_combat_stats.vesper_art_use_count, _combat_stats.vesper_art_hit_count, _combat_stats.vesper_art_miss_count])
+		lines.append("Flow +/Spend/Def: %d / %d / %d" % [int(round(_combat_stats.flow_gain_total)), int(round(_combat_stats.flow_spend_total)), int(round(_combat_stats.flow_gain_deflect_total))])
 		lines.append("Blood Rend U/H/Cost: %d / %d / %d" % [_combat_stats.blood_rend_use_count, _combat_stats.blood_rend_hit_count, int(round(_combat_stats.blood_cost_total))])
 		lines.append("Blood Scent OK/Hit: %d / %d" % [_combat_stats.blood_scent_success_count, _combat_stats.blood_scent_hit_taken_count])
 	else:

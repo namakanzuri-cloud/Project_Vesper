@@ -59,6 +59,16 @@ var blood_cost_total: float = 0.0
 var blood_scent_success_count: int = 0
 var blood_scent_hit_taken_count: int = 0
 var final_flow: float = 0.0
+var flow_gain_total: float = 0.0
+var flow_spend_total: float = 0.0
+var flow_loss_total: float = 0.0
+var flow_gain_attack_total: float = 0.0
+var flow_gain_defense_total: float = 0.0
+var flow_gain_deflect_total: float = 0.0
+var flow_gain_counter_total: float = 0.0
+var flow_gain_blood_scent_total: float = 0.0
+var last_flow_delta: float = 0.0
+var last_flow_reason: String = ""
 var is_tracking: bool = false
 var last_result_data: Dictionary = {}
 var last_result_json: String = ""
@@ -95,6 +105,16 @@ func reset_for_combat() -> void:
 	blood_scent_success_count = 0
 	blood_scent_hit_taken_count = 0
 	final_flow = 0.0
+	flow_gain_total = 0.0
+	flow_spend_total = 0.0
+	flow_loss_total = 0.0
+	flow_gain_attack_total = 0.0
+	flow_gain_defense_total = 0.0
+	flow_gain_deflect_total = 0.0
+	flow_gain_counter_total = 0.0
+	flow_gain_blood_scent_total = 0.0
+	last_flow_delta = 0.0
+	last_flow_reason = ""
 	is_tracking = true
 	stats_changed.emit()
 
@@ -109,6 +129,38 @@ func record_flow_changed(current_flow: float, _max_flow: float) -> void:
 
 	final_flow = maxf(0.0, current_flow)
 	stats_changed.emit()
+
+func record_flow_event(delta: float, reason: String, current_flow: float) -> void:
+	if not is_tracking:
+		return
+
+	last_flow_delta = delta
+	last_flow_reason = reason
+	final_flow = maxf(0.0, current_flow)
+	if delta > 0.0:
+		flow_gain_total += delta
+		_record_flow_gain_category(delta, reason)
+	elif _is_flow_spend_reason(reason):
+		flow_spend_total += absf(delta)
+	else:
+		flow_loss_total += absf(delta)
+	stats_changed.emit()
+
+func _record_flow_gain_category(amount: float, reason: String) -> void:
+	if reason.begins_with("DEFLECT"):
+		flow_gain_deflect_total += amount
+	elif reason == "LIGHT HIT" or reason == "HEAVY HIT":
+		flow_gain_attack_total += amount
+	elif reason == "PARRY" or reason == "JUST DODGE" or reason == "INTERRUPT" or reason == "HEAVY PUNISH":
+		flow_gain_defense_total += amount
+	elif reason == "RIPOSTE" or reason == "VESPER COUNTER" or reason == "JUST COUNTER" or reason == "COUNTER":
+		flow_gain_counter_total += amount
+	elif reason == "BLOOD SCENT":
+		flow_gain_blood_scent_total += amount
+
+func _is_flow_spend_reason(reason: String) -> bool:
+	return reason == "VESPER ART" or reason == "VESPER ART MISS" or reason == "SPEND"
+
 
 func record_damage_taken(amount: float) -> void:
 	if not is_tracking or amount <= 0.0:
@@ -306,6 +358,9 @@ func get_result_text() -> String:
 	lines.append("Blood Scent Success: %d" % blood_scent_success_count)
 	lines.append("Blood Scent Hit Taken: %d" % blood_scent_hit_taken_count)
 	lines.append("Final Flow: %d" % int(round(final_flow)))
+	lines.append("Flow Gain/Spend/Loss: %d / %d / %d" % [int(round(flow_gain_total)), int(round(flow_spend_total)), int(round(flow_loss_total))])
+	lines.append("Flow Gain D/A/Def/C: %d / %d / %d / %d" % [int(round(flow_gain_defense_total)), int(round(flow_gain_attack_total)), int(round(flow_gain_deflect_total)), int(round(flow_gain_counter_total))])
+	lines.append("Last Flow: %+d / %s" % [int(round(last_flow_delta)), last_flow_reason])
 	return "\n".join(lines)
 
 func build_result_log(result: String) -> Dictionary:
@@ -320,6 +375,16 @@ func build_result_log(result: String) -> Dictionary:
 		"hitTakenCount": hit_taken_count,
 		"maxCombo": max_combo,
 		"finalFlow": int(round(final_flow)),
+		"flowGainTotal": int(round(flow_gain_total)),
+		"flowSpendTotal": int(round(flow_spend_total)),
+		"flowLossTotal": int(round(flow_loss_total)),
+		"flowGainAttack": int(round(flow_gain_attack_total)),
+		"flowGainDefense": int(round(flow_gain_defense_total)),
+		"flowGainDeflect": int(round(flow_gain_deflect_total)),
+		"flowGainCounter": int(round(flow_gain_counter_total)),
+		"flowGainBloodScent": int(round(flow_gain_blood_scent_total)),
+		"lastFlowDelta": int(round(last_flow_delta)),
+		"lastFlowReason": last_flow_reason,
 		"parryCount": parry_count,
 		"normalParryCount": normal_parry_count,
 		"rhythmParryCount": rhythm_parry_count,
@@ -358,7 +423,8 @@ func get_result_log_summary() -> String:
 	lines.append("Rank: %s / Score: %d" % [str(last_result_data.get("rank", "")), int(last_result_data.get("score", 0))])
 	lines.append("Time: %.1fs / Damage: %d" % [float(last_result_data.get("clearTime", 0.0)), int(last_result_data.get("damageTaken", 0))])
 	lines.append("Max Combo: %d / Final Flow: %d" % [int(last_result_data.get("maxCombo", 0)), int(last_result_data.get("finalFlow", 0))])
-	lines.append("Deflect: %d / Max Chain: %d / Fail: %d" % [int(last_result_data.get("deflectCount", 0)), int(last_result_data.get("maxDeflectChain", 0)), int(last_result_data.get("parryFailCount", 0))])
+	lines.append("Flow +/Spend: %d / %d" % [int(last_result_data.get("flowGainTotal", 0)), int(last_result_data.get("flowSpendTotal", 0))])
+	lines.append("Deflect: %d / Max Chain: %d / Flow %d" % [int(last_result_data.get("deflectCount", 0)), int(last_result_data.get("maxDeflectChain", 0)), int(last_result_data.get("flowGainDeflect", 0))])
 	lines.append("Blood Rend: %d/%d / Cost: %d" % [int(last_result_data.get("bloodRendHitCount", 0)), int(last_result_data.get("bloodRendUseCount", 0)), int(last_result_data.get("bloodCostTotal", 0))])
 	lines.append("Blood Scent: OK %d / Hit %d" % [int(last_result_data.get("bloodScentSuccessCount", 0)), int(last_result_data.get("bloodScentHitTakenCount", 0))])
 	return "\n".join(lines)

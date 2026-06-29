@@ -3,9 +3,9 @@ class_name CameraFollow
 
 @export var target_path: NodePath
 @export var target_group: StringName = &"player"
-@export var offset: Vector3 = Vector3(0.0, 8.5, 8.5)
+@export var offset: Vector3 = Vector3(0.0, 9.6, 8.9)
 @export var follow_sharpness: float = 12.0
-@export var look_height: float = 1.1
+@export var look_height: float = 1.25
 
 @export_group("Shake")
 @export var light_attack_shake_strength: float = 0.08

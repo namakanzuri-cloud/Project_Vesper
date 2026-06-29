@@ -116,6 +116,8 @@ func _connect_combat_stats() -> void:
 		combo_tracker.combo_changed.connect(combat_stats.record_combo_changed)
 	if flow_tracker != null and not flow_tracker.flow_changed.is_connected(combat_stats.record_flow_changed):
 		flow_tracker.flow_changed.connect(combat_stats.record_flow_changed)
+	if flow_tracker != null and flow_tracker.has_signal("flow_event_recorded") and not flow_tracker.flow_event_recorded.is_connected(combat_stats.record_flow_event):
+		flow_tracker.flow_event_recorded.connect(combat_stats.record_flow_event)
 
 func _reset_combat_stats() -> void:
 	if combat_stats != null:

@@ -46,8 +46,8 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵の接近と複数攻撃パターンからの重み付き選択
 - 敵AIがプレイヤーとの距離に応じて攻撃パターンを選び分ける
 - 近距離では速い斬り、掴み、短い圧力が出やすい
-- 中距離では短い圧力、アーマー叩きつけ絡みの派生が出やすい
-- 遠距離では短い圧力、アーマー叩きつけ絡みの派生に候補が絞られる
+- 中距離では短い圧力、後退斬り、アーマー叩きつけ絡みの派生がたまに出る
+- 遠距離では短い圧力が中心で、アーマー叩きつけ絡みの派生は低頻度に抑えられる
 - `Parry Stock` が高いとき、敵が掴み・アーマー系の派生を少し選びやすくなる
 - プレイヤーが短時間に攻撃を重ねた場合、敵が速い連撃・短い圧力を少し選びやすくなる
 - 同じ攻撃パターンの連発を抑える
@@ -55,6 +55,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 敵の遅延重斬り（長い予兆 / 高めダメージ / パリィ可能 / 指定された予兆時間帯だけ差し込み中断可能）
 - 敵の掴み（近距離 / 中〜高ダメージ / パリィ不可 / 中断不可 / 回避や距離取りで対応）
 - 敵のアーマー叩きつけ（長い予兆 / 高ダメージ / パリィ不可 / 中断不可 / 回避後に反撃しやすい長めの後隙）
+- 敵の後退斬り（少し引くフェイント / 早押しパリィ誘い / 待って実斬りを読む Deflect 対応）
 - 速い斬り系は青い床予兆で統一し、Deflect向けの共通タイミングとして扱う
 - 攻撃タイプごとの中断可否、差し込み可能時間帯、強攻撃要求、スタン時間の調整
 - 敵攻撃シーケンス / コンボパターン Phase 2
@@ -63,6 +64,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Simple Pressure: 速い斬り → 速い斬り
 - Pressure into Slam: 速い斬り → 速い斬り → アーマー叩きつけ
 - Slash Slam Mix: 速い斬り → アーマー叩きつけ
+- Retreat Pressure: 後退斬り
 - 攻撃タイプごとの床予兆の色・サイズによる補助表示
 - 遅延重斬りの予兆中、設定された中断可能時間帯にプレイヤー攻撃を当てると `INTERRUPT!` 表示と短時間スタン
 - 速い斬り、掴み、アーマー叩きつけは差し込み中断不可
@@ -113,12 +115,26 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Fast Combo 1st-3rd hit Deflect tempo, Flow gain, Vesper Art balance, Riposte / Vesper Counter priority, player damage, stamina costs, and result scoring were not intentionally rebalanced in this phase.
 ## Fast Combo Finisher Weight Tuning Phase 1
 
-- Fast Combo finisher defaults are now tuned toward Heavy Finish as the primary ending (`75 / 15 / 10` for heavy / grab / slam).
+- Fast Combo finisher defaults are now tuned toward Heavy Finish as the primary ending (`82 / 13 / 5` for heavy / grab / slam).
 - Grab and armor slam finishers remain available as occasional blind-Parry punish routes, but should no longer feel like the default Fast Combo ending.
-- Existing Grab Mix, Pressure into Slam, and Slash Slam Mix patterns were kept and made less frequent/tunable now that Fast Combo can also branch into grab/slam.
-- A simple dangerous-outcome suppression pass reduces repeated Grab/Slam pressure and forces the next Fast Combo finisher back to Heavy after a dangerous outcome.
+- Existing Grab Mix, Pressure into Slam, and Slash Slam Mix patterns were kept tunable; Slam-heavy pattern weights are now reduced so Slam is occasional instead of default pressure.
+- Dangerous-outcome suppression still forces the next Fast Combo finisher back to Heavy, and Slam outcomes now briefly suppress all Slam sources for the next selections.
 - Fast Combo 1st-3rd hit Deflect tempo, Flow, Vesper Art balance, and parry/deflect success rules were intentionally not changed.
 
+## Slam Frequency Tuning Phase 1
+
+- Armor Slam frequency was reduced across Fast Combo finishers, Pressure into Slam, and Slash Slam Mix.
+- Slam remains a scary anti-mash / anti-blind-Parry punish, but it should read as an occasional punctuation mark.
+- After a Slam-type outcome, all Slam sources are briefly suppressed through a small exported counter/multiplier.
+- Fast Combo Heavy Finish remains the primary ending, with Grab/Slam kept as occasional punish branches.
+
+## Retreat Slash / Feint Pressure Phase 1
+
+- Retreat Slash is now used by the enemy as the low-frequency `Retreat Pressure` pattern.
+- The enemy slightly retreats during startup, shows a pulled-back body/arm/weapon pose, then commits to a short fast slash.
+- Its role is to punish reflexive early Parry habits through the existing Parry whiff recovery, not through an unavoidable trap.
+- Correct response is to wait, read the actual slash, then Deflect/parry or avoid.
+- Floor telegraphs remain debug/assist visuals; `FULL_DEBUG`, `MINIMAL`, and `OFF` still rely on enemy pose and motion as the intended read.
 
 ## Blood Rend / Blood Scent Prototype
 
@@ -184,7 +200,7 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - 正式な3Dモデルやアニメーションは未実装です。
 - 敵の腕や武器はプリミティブによる仮表示です。正式モデル、正式アニメーション、武器軌跡はまだありません。
 - アーマー叩きつけの構え・発光・床予兆は、仮モデル用の簡易表現です。
-- 後退斬り型は `enemy_controller.gd` に定義がありますが、現行の攻撃パターンにはまだ組み込んでいません。
+- 後退斬り型は `Retreat Pressure` として組み込み済みですが、正式アニメーションではなく仮モデルの後退移動・構え表現です。
 - プレイヤー攻撃は、仮モデル段階の球形判定です。正式な武器軌跡や攻撃アニメーションはまだありません。
 - 敵攻撃パターンは `enemy_controller.gd` 内の仮定義です。敵AIはまだ簡易的な重み付き選択であり、正式な行動ツリーや高度な状況判断AIではありません。
 - 距離別選択、同一パターン抑制、軽い対パリィ補正、対アグレッション補正は仮調整です。
@@ -223,3 +239,13 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - `F7` cycles `FULL_DEBUG -> MINIMAL -> OFF -> FULL_DEBUG`; the current mode is shown in the combat debug HUD.
 - Floor telegraphs are now debug/assist visuals, not the intended final source of attack recognition.
 - Fast Combo / Deflect tempo, Deflect chain logic, Parry behavior, Riposte/Vesper priority, and enemy AI weights were intentionally preserved.
+
+## Flow / Vesper Art Balance Tuning Phase 1
+
+- Flow tuning now favors mixed defensive reads over repeated weak-attack Deflect farming.
+- Fast/light Deflect defaults are lower (`7` base, `+2` chain bonus capped at `+6`), so a three-hit Fast Combo Deflect chain grants about `27` Flow before other rewards.
+- Normal attack Flow is intentionally small (`light +1`, `heavy +4`) so basic attack mashing does not become the main resource engine.
+- Stronger read/counter actions carry more of the Flow route: delayed-heavy Parry `+20`, Interrupt `+20`, Riposte `+16`, Vesper Counter `+26`, Just Dodge Counter `+12`.
+- Vesper Art still costs `100` Flow, and misses now spend the full `100` to keep it as a committed finisher/read point.
+- Debug HUD shows the latest Flow delta/reason plus run totals for Flow gain, spend, and Deflect-sourced Flow.
+- Result / Run Log JSON includes minimal Flow test fields such as total gain/spend/loss and gain by attack, defense, Deflect, counter, and Blood Scent.

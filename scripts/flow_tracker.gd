@@ -3,21 +3,23 @@ class_name FlowTracker
 
 signal flow_changed(current_flow: float, max_flow: float)
 signal flow_popup_requested(message: String, duration: float)
+signal flow_event_recorded(delta: float, reason: String, current_flow: float)
 
 @export var max_flow: float = 100.0
 
 @export_group("Flow Gains")
-@export var light_attack_hit_flow_gain: float = 3.0
-@export var heavy_attack_hit_flow_gain: float = 7.0
-@export var parry_flow_gain: float = 12.0
-@export var deflect_flow_gain: float = 10.0
-@export var deflect_chain_bonus_flow: float = 3.0
-@export var just_dodge_flow_gain: float = 14.0
-@export var interrupt_flow_gain: float = 18.0
-@export var riposte_hit_flow_gain: float = 12.0
-@export var vesper_counter_hit_flow_gain: float = 22.0
-@export var counter_hit_flow_gain: float = 10.0
-@export var heavy_punish_flow_gain: float = 20.0
+@export var light_attack_hit_flow_gain: float = 1.0
+@export var heavy_attack_hit_flow_gain: float = 4.0
+@export var parry_flow_gain: float = 14.0
+@export var deflect_flow_gain: float = 7.0
+@export var deflect_chain_bonus_flow: float = 2.0
+@export var deflect_chain_bonus_max_flow: float = 6.0
+@export var just_dodge_flow_gain: float = 12.0
+@export var interrupt_flow_gain: float = 20.0
+@export var riposte_hit_flow_gain: float = 16.0
+@export var vesper_counter_hit_flow_gain: float = 26.0
+@export var counter_hit_flow_gain: float = 12.0
+@export var heavy_punish_flow_gain: float = 18.0
 @export var blood_scent_success_flow_gain: float = 5.0
 
 @export_group("Flow Losses")
@@ -86,7 +88,8 @@ func add_parry_flow() -> void:
 
 func add_deflect_flow(chain_count: int = 1, override_flow_gain: float = 0.0) -> void:
 	var base_gain := override_flow_gain if override_flow_gain > 0.0 else deflect_flow_gain
-	var bonus := maxf(0.0, float(maxi(0, chain_count - 1)) * deflect_chain_bonus_flow)
+	var uncapped_bonus := maxf(0.0, float(maxi(0, chain_count - 1)) * deflect_chain_bonus_flow)
+	var bonus := minf(uncapped_bonus, maxf(0.0, deflect_chain_bonus_max_flow))
 	var reason := "DEFLECT"
 	if chain_count >= 2:
 		reason = "DEFLECT x%d" % chain_count
@@ -132,4 +135,5 @@ func _change_flow(delta: float, reason: String) -> void:
 	last_flow_delta = actual_delta
 	last_flow_reason = reason
 	last_flow_change_text = "%s%d FLOW / %s" % [sign, int(round(amount)), reason]
+	flow_event_recorded.emit(actual_delta, reason, current_flow)
 	flow_popup_requested.emit(last_flow_change_text, flow_popup_duration)

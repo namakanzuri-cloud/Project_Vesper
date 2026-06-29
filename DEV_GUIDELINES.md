@@ -110,3 +110,11 @@ Project Vesper は、Godot 4.7 / GDScript で作る 2.5D 見下ろしアクシ�
 - Treat Fast Combo Grab/Slam finishers as occasional punish options; Heavy Finish should remain the primary default ending.
 
 - Blood Rend / Blood Scent prototype: Q follow-up after earned hit openings, separate blood-cost stats, Blood Scent clean-play reward, Result JSON fields.
+
+## Flow / Vesper Art Balance Tuning Phase 1
+
+- Preserve Rhythm Parry / Deflect feel, but do not let weak-attack Deflect alone refill Vesper Art too quickly.
+- Prefer Flow rewards for correct reads and counter routes over normal attack repetition.
+- Current tuning target: good mixed play can reach roughly 1-2 Vesper Art attempts per fight; repeated Deflect-only play should be noticeably slower.
+- Keep Flow values exported where possible for Inspector tuning.
+- Keep debug visibility for latest Flow delta/reason and Result JSON Flow source totals when changing Flow balance.

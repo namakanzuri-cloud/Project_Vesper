@@ -5,7 +5,7 @@ signal interrupt_succeeded
 
 enum EnemyState { CHASE, TELEGRAPH, ACTIVE, RECOVERY, PATTERN_GAP, PATTERN_RECOVERY, STUNNED, DEAD }
 enum AttackType { FAST_SLASH, DELAYED_HEAVY, GRAB, ARMOR_SLAM, RETREAT_SLASH }
-enum AttackPattern { FAST_COMBO, GRAB_MIX, SIMPLE_PRESSURE, PRESSURE_INTO_SLAM, SLASH_SLAM_MIX }
+enum AttackPattern { FAST_COMBO, GRAB_MIX, SIMPLE_PRESSURE, PRESSURE_INTO_SLAM, SLASH_SLAM_MIX, RETREAT_PRESSURE }
 enum FastComboFinisher { HEAVY_FINISH, GRAB_FINISH, SLAM_FINISH }
 enum DistanceBand { CLOSE, MID, FAR }
 enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
@@ -26,9 +26,11 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var repeat_pattern_weight_multiplier: float = 0.35
 @export var recent_pattern_memory_count: int = 2
 @export var dangerous_outcome_repeat_weight_multiplier: float = 0.35
+@export var slam_suppression_count: int = 2
+@export var slam_suppression_multiplier: float = 0.18
 @export var anti_parry_stock_threshold: int = 2
 @export var anti_parry_grab_weight_bonus: float = 1.4
-@export var anti_parry_armor_weight_bonus: float = 1.35
+@export var anti_parry_armor_weight_bonus: float = 1.12
 @export var aggression_check_window: float = 2.0
 @export var aggression_attack_count_threshold: int = 3
 @export var anti_aggression_weight_bonus: float = 1.25
@@ -45,8 +47,9 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var fast_combo_weight: float = 3.0
 @export var grab_mix_weight: float = 1.4
 @export var simple_pressure_weight: float = 3.2
-@export var pressure_into_slam_weight: float = 1.2
-@export var slash_slam_mix_weight: float = 1.1
+@export var pressure_into_slam_weight: float = 0.6
+@export var slash_slam_mix_weight: float = 0.5
+@export var retreat_pressure_weight: float = 1.0
 @export var fast_combo_step_interval: float = 0.04
 @export var grab_mix_step_interval: float = 0.06
 @export var simple_pressure_step_interval: float = 0.04
@@ -57,9 +60,9 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var pattern_abort_distance: float = 4.8
 
 @export_group("Fast Combo Finishers")
-@export var fast_combo_heavy_finish_weight: float = 75.0
-@export var fast_combo_grab_finish_weight: float = 15.0
-@export var fast_combo_slam_finish_weight: float = 10.0
+@export var fast_combo_heavy_finish_weight: float = 82.0
+@export var fast_combo_grab_finish_weight: float = 13.0
+@export var fast_combo_slam_finish_weight: float = 5.0
 @export var suppress_dangerous_finisher_after_dangerous_outcome: bool = true
 @export var fast_combo_finisher_transition_time: float = 0.32
 
@@ -90,7 +93,7 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var fast_slash_parry_stops_enemy: bool = false
 @export var fast_slash_parry_grants_riposte: bool = false
 @export var fast_slash_is_rhythm_deflect: bool = true
-@export var fast_slash_deflect_flow_gain: float = 10.0
+@export var fast_slash_deflect_flow_gain: float = 7.0
 @export var fast_slash_parry_flow_gain: float = 0.0
 @export var fast_slash_interruptible: bool = false
 @export var fast_slash_interrupt_window_start: float = 0.0
@@ -111,7 +114,7 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var delayed_heavy_parry_grants_riposte: bool = true
 @export var delayed_heavy_is_rhythm_deflect: bool = false
 @export var delayed_heavy_deflect_flow_gain: float = 0.0
-@export var delayed_heavy_parry_flow_gain: float = 18.0
+@export var delayed_heavy_parry_flow_gain: float = 20.0
 @export var delayed_heavy_interruptible: bool = true
 @export var delayed_heavy_interrupt_window_start: float = 0.35
 @export var delayed_heavy_interrupt_window_end: float = 1.0
@@ -164,19 +167,20 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var armor_slam_hit_stop_duration: float = 0.1
 @export var armor_slam_camera_shake_strength: float = 0.2
 @export var armor_slam_camera_shake_duration: float = 0.16
+@export var armor_slam_active_pose_tween_time: float = 0.0
 
 @export_group("Retreat Slash")
 @export var retreat_slash_range: float = 1.75
 @export var retreat_slash_radius: float = 0.92
 @export var retreat_slash_damage: float = 11.0
-@export var retreat_slash_telegraph_time: float = 0.47
+@export var retreat_slash_telegraph_time: float = 0.64
 @export var retreat_slash_active_time: float = 0.12
-@export var retreat_slash_recovery_time: float = 0.34
+@export var retreat_slash_recovery_time: float = 0.38
 @export var retreat_slash_parryable: bool = true
 @export var retreat_slash_parry_stops_enemy: bool = false
 @export var retreat_slash_parry_grants_riposte: bool = false
 @export var retreat_slash_is_rhythm_deflect: bool = true
-@export var retreat_slash_deflect_flow_gain: float = 10.0
+@export var retreat_slash_deflect_flow_gain: float = 7.0
 @export var retreat_slash_parry_flow_gain: float = 0.0
 @export var retreat_slash_interruptible: bool = false
 @export var retreat_slash_interrupt_window_start: float = 0.0
@@ -184,8 +188,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var retreat_slash_interrupt_requires_heavy: bool = false
 @export var retreat_slash_interrupt_stun_duration: float = 0.62
 @export var retreat_slash_telegraph_color: Color = Color(0.08, 0.82, 1.0, 0.42)
-@export var retreat_slash_retreat_distance: float = 0.0
-@export var retreat_slash_retreat_duration: float = 0.0
+@export var retreat_slash_retreat_distance: float = 0.42
+@export var retreat_slash_retreat_duration: float = 0.3
 
 @export_group("Interrupt")
 @export var interrupt_stun_time: float = 0.62
@@ -249,6 +253,7 @@ var _pattern_step_index: int = 0
 var _pattern_active: bool = false
 var _last_attack_pattern: int = -1
 var _last_dangerous_outcome_attack_type: int = -1
+var _slam_suppression_remaining: int = 0
 var _recent_attack_patterns: Array[int] = []
 var _last_ai_distance_band: int = DistanceBand.CLOSE
 var _attack_damaged_targets: Array[Node] = []
@@ -387,10 +392,27 @@ func _update_telegraph_movement(delta: float) -> void:
 	if retreat_slash_retreat_duration <= 0.0 or _retreat_distance_remaining <= 0.0:
 		return
 
-	var retreat_speed := retreat_slash_retreat_distance / retreat_slash_retreat_duration
-	var retreat_step := minf(_retreat_distance_remaining, retreat_speed * delta)
-	_retreat_distance_remaining -= retreat_step
+	var retreat_distance := maxf(0.0, retreat_slash_retreat_distance)
+	if retreat_distance <= 0.0:
+		return
+
 	var retreat_direction := -_attack_direction
+	if retreat_direction.length_squared() <= 0.001:
+		return
+
+	var current_distance := _get_flat_to_target().length()
+	var max_followup_distance := _get_current_attack_range() + _get_current_attack_radius() - 0.08
+	var available_retreat_room := maxf(0.0, max_followup_distance - current_distance)
+	if available_retreat_room <= 0.0:
+		return
+
+	var retreat_speed := retreat_distance / retreat_slash_retreat_duration
+	var retreat_step := minf(_retreat_distance_remaining, retreat_speed * delta)
+	retreat_step = minf(retreat_step, available_retreat_room)
+	if retreat_step <= 0.0:
+		return
+
+	_retreat_distance_remaining -= retreat_step
 	velocity.x = retreat_direction.x * retreat_step / maxf(delta, 0.001)
 	velocity.z = retreat_direction.z * retreat_step / maxf(delta, 0.001)
 
@@ -461,6 +483,7 @@ func _start_attack_pattern(distance_to_target: float) -> void:
 	_current_attack_pattern = _select_attack_pattern(distance_to_target)
 	_remember_attack_pattern(_current_attack_pattern)
 	_pattern_steps = _get_pattern_steps(_current_attack_pattern)
+	_update_slam_suppression_from_steps(_pattern_steps)
 	_remember_dangerous_outcome_from_steps(_pattern_steps)
 	_pattern_step_index = 0
 	_pattern_active = true
@@ -500,7 +523,7 @@ func _start_attack_step(attack_type: int, direction: Vector3) -> void:
 	_state = EnemyState.TELEGRAPH
 	_state_time_remaining = maxf(0.0, _get_current_attack_telegraph_time())
 	_current_attack_telegraph_elapsed = 0.0
-	_retreat_distance_remaining = retreat_slash_retreat_distance if _current_attack_type == AttackType.RETREAT_SLASH else 0.0
+	_retreat_distance_remaining = maxf(0.0, retreat_slash_retreat_distance) if _current_attack_type == AttackType.RETREAT_SLASH else 0.0
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()
 	_set_attack_hitbox_enabled(false)
@@ -971,6 +994,7 @@ func _select_attack_pattern(distance_to_target: float) -> int:
 	_append_pattern_option(options, AttackPattern.SIMPLE_PRESSURE, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.PRESSURE_INTO_SLAM, distance_to_target, anti_parry_active, anti_aggression_active)
 	_append_pattern_option(options, AttackPattern.SLASH_SLAM_MIX, distance_to_target, anti_parry_active, anti_aggression_active)
+	_append_pattern_option(options, AttackPattern.RETREAT_PRESSURE, distance_to_target, anti_parry_active, anti_aggression_active)
 
 	if options.is_empty():
 		return _get_fallback_pattern_for_distance_band(_last_ai_distance_band)
@@ -1031,9 +1055,13 @@ func _is_pattern_valid_for_distance_band(pattern: int, distance_band: int) -> bo
 	match distance_band:
 		DistanceBand.CLOSE:
 			match pattern:
-				AttackPattern.FAST_COMBO, AttackPattern.GRAB_MIX, AttackPattern.SIMPLE_PRESSURE, AttackPattern.SLASH_SLAM_MIX:
+				AttackPattern.FAST_COMBO, AttackPattern.GRAB_MIX, AttackPattern.SIMPLE_PRESSURE, AttackPattern.SLASH_SLAM_MIX, AttackPattern.RETREAT_PRESSURE:
 					return true
-		DistanceBand.MID, DistanceBand.FAR:
+		DistanceBand.MID:
+			match pattern:
+				AttackPattern.SIMPLE_PRESSURE, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX, AttackPattern.RETREAT_PRESSURE:
+					return true
+		DistanceBand.FAR:
 			match pattern:
 				AttackPattern.SIMPLE_PRESSURE, AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX:
 					return true
@@ -1055,16 +1083,20 @@ func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
 				AttackPattern.SIMPLE_PRESSURE:
 					return base_weight * 1.25
 				AttackPattern.SLASH_SLAM_MIX:
-					return base_weight * 1.05
-				AttackPattern.PRESSURE_INTO_SLAM:
 					return base_weight * 0.75
+				AttackPattern.RETREAT_PRESSURE:
+					return base_weight * 0.9
+				AttackPattern.PRESSURE_INTO_SLAM:
+					return base_weight * 0.65
 
 		DistanceBand.MID:
 			match pattern:
+				AttackPattern.RETREAT_PRESSURE:
+					return base_weight
 				AttackPattern.PRESSURE_INTO_SLAM:
-					return base_weight * 1.25
+					return base_weight * 0.9
 				AttackPattern.SLASH_SLAM_MIX:
-					return base_weight * 1.15
+					return base_weight * 0.75
 
 				AttackPattern.SIMPLE_PRESSURE:
 					return base_weight * 0.8
@@ -1077,9 +1109,11 @@ func _get_pattern_distance_weight(pattern: int, distance_band: int) -> float:
 				AttackPattern.SIMPLE_PRESSURE:
 					return base_weight * 0.7
 				AttackPattern.PRESSURE_INTO_SLAM:
-					return base_weight * 0.9
+					return base_weight * 0.35
 				AttackPattern.SLASH_SLAM_MIX:
-					return base_weight * 0.85
+					return base_weight * 0.25
+				AttackPattern.RETREAT_PRESSURE:
+					return 0.0
 				_:
 					return 0.0
 
@@ -1097,6 +1131,8 @@ func _get_pattern_base_weight(pattern: int) -> float:
 
 		AttackPattern.SLASH_SLAM_MIX:
 			return slash_slam_mix_weight
+		AttackPattern.RETREAT_PRESSURE:
+			return retreat_pressure_weight
 		_:
 			return simple_pressure_weight
 
@@ -1122,6 +1158,9 @@ func _apply_pattern_weight_modifiers(pattern: int, weight: float, anti_parry_act
 
 	if _should_suppress_dangerous_outcome() and _is_dangerous_attack_pattern(pattern):
 		modified_weight *= maxf(0.0, dangerous_outcome_repeat_weight_multiplier)
+
+	if _should_suppress_slam_outcome() and _is_slam_attack_pattern(pattern):
+		modified_weight *= _get_slam_suppression_multiplier()
 
 	return modified_weight
 
@@ -1249,6 +1288,9 @@ func _get_pattern_steps(pattern: int) -> Array[int]:
 			# Compact anti-mash / anti-blind-parry route; weight remains tunable.
 			steps.append(AttackType.FAST_SLASH)
 			steps.append(AttackType.ARMOR_SLAM)
+		AttackPattern.RETREAT_PRESSURE:
+			# Wait/read check: a visible pull-away feint into a fast Deflect slash.
+			steps.append(AttackType.RETREAT_SLASH)
 		_:
 			# Simple Pressure stays intentionally short.
 			steps.append(AttackType.FAST_SLASH)
@@ -1279,10 +1321,13 @@ func _select_fast_combo_finisher() -> int:
 	return _pick_weighted_fast_combo_finisher(options)
 
 func _append_fast_combo_finisher_option(options: Array[Dictionary], finisher: int, weight: float) -> void:
-	if weight <= 0.0:
+	var adjusted_weight := weight
+	if finisher == FastComboFinisher.SLAM_FINISH and _should_suppress_slam_outcome():
+		adjusted_weight *= _get_slam_suppression_multiplier()
+	if adjusted_weight <= 0.0:
 		return
 
-	options.append({ "finisher": finisher, "weight": weight })
+	options.append({ "finisher": finisher, "weight": adjusted_weight })
 
 func _pick_weighted_fast_combo_finisher(options: Array[Dictionary]) -> int:
 	var total_weight := 0.0
@@ -1313,6 +1358,32 @@ func _is_dangerous_attack_pattern(pattern: int) -> bool:
 		_:
 			return false
 
+func _is_slam_attack_pattern(pattern: int) -> bool:
+	match pattern:
+		AttackPattern.PRESSURE_INTO_SLAM, AttackPattern.SLASH_SLAM_MIX:
+			return true
+		_:
+			return false
+
+func _update_slam_suppression_from_steps(steps: Array[int]) -> void:
+	if _steps_include_slam(steps):
+		_slam_suppression_remaining = maxi(0, slam_suppression_count)
+	elif _slam_suppression_remaining > 0:
+		_slam_suppression_remaining -= 1
+
+func _should_suppress_slam_outcome() -> bool:
+	return _slam_suppression_remaining > 0 and _get_slam_suppression_multiplier() < 1.0
+
+func _get_slam_suppression_multiplier() -> float:
+	return clampf(slam_suppression_multiplier, 0.0, 1.0)
+
+func _steps_include_slam(steps: Array[int]) -> bool:
+	for step in steps:
+		if step == AttackType.ARMOR_SLAM:
+			return true
+
+	return false
+
 func _remember_dangerous_outcome_from_steps(steps: Array[int]) -> void:
 	_last_dangerous_outcome_attack_type = -1
 	for step in steps:
@@ -1323,7 +1394,10 @@ func _remember_dangerous_outcome_from_steps(steps: Array[int]) -> void:
 func _is_dangerous_attack_type(attack_type: int) -> bool:
 	return attack_type == AttackType.GRAB or attack_type == AttackType.ARMOR_SLAM
 
-func _get_pattern_first_attack(_pattern: int) -> int:
+func _get_pattern_first_attack(pattern: int) -> int:
+	if pattern == AttackPattern.RETREAT_PRESSURE:
+		return AttackType.RETREAT_SLASH
+
 	return AttackType.FAST_SLASH
 
 func _get_current_pattern_step_interval() -> float:
@@ -1353,6 +1427,8 @@ func _get_attack_pattern_name(pattern: int) -> String:
 
 		AttackPattern.SLASH_SLAM_MIX:
 			return "Slash Slam Mix"
+		AttackPattern.RETREAT_PRESSURE:
+			return "Retreat Pressure"
 		_:
 			return "Simple Pressure"
 
@@ -1374,7 +1450,7 @@ func _clear_attack_pattern_state() -> void:
 
 func _get_attack_start_range_for_type(attack_type: int) -> float:
 	if attack_type == AttackType.RETREAT_SLASH:
-		return maxf(0.1, _get_attack_range(attack_type) + _get_attack_radius(attack_type) - retreat_slash_retreat_distance - 0.15)
+		return maxf(0.1, _get_attack_range(attack_type) + _get_attack_radius(attack_type) - maxf(0.0, retreat_slash_retreat_distance) - 0.15)
 
 	return _get_attack_range(attack_type) + _get_attack_radius(attack_type)
 
@@ -1601,6 +1677,12 @@ func _get_current_telegraph_tracking_turn_speed() -> float:
 		_:
 			return fast_slash_telegraph_tracking_turn_speed
 
+func _get_attack_pose_tween_time(attack_type: int, is_active: bool) -> float:
+	if attack_type == AttackType.ARMOR_SLAM and is_active:
+		return maxf(0.0, armor_slam_active_pose_tween_time)
+
+	return pose_tween_time
+
 func _get_attack_type_name(attack_type: int) -> String:
 	match attack_type:
 		AttackType.ARMOR_SLAM:
@@ -1752,7 +1834,7 @@ func _get_current_attack_interrupt_stun_duration() -> float:
 			return fast_slash_interrupt_stun_duration
 
 func _set_attack_pose(attack_type: int, is_active: bool) -> void:
-	var duration := pose_tween_time
+	var duration := _get_attack_pose_tween_time(attack_type, is_active)
 	_begin_pose_change(duration)
 	_apply_body_visual_pose(attack_type, is_active, duration)
 
@@ -1764,9 +1846,9 @@ func _set_attack_pose(attack_type: int, is_active: bool) -> void:
 				_apply_pose_values(Vector3(0.48, 1.92, 0.12), Vector3(-98, -12, -30), Vector3(-0.44, 1.76, 0.08), Vector3(-88, 12, 28), Vector3(0.18, 2.26, 0.22), Vector3(-104, 0, -12), true, duration)
 		AttackType.RETREAT_SLASH:
 			if is_active:
-				_apply_pose_values(Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, duration)
+				_apply_pose_values(Vector3(0.28, 1.0, -0.56), Vector3(56, 58, -22), Vector3(-0.44, 0.98, -0.16), Vector3(20, 0, 14), Vector3(0.06, 0.98, -1.0), Vector3(84, 78, -12), true, duration)
 			else:
-				_apply_pose_values(Vector3(0.54, 1.02, 0.28), Vector3(-10, -76, -10), Vector3(-0.46, 1.0, -0.04), Vector3(16, 0, 16), Vector3(0.9, 1.0, 0.1), Vector3(-12, -84, -8), true, duration)
+				_apply_pose_values(Vector3(0.64, 1.08, 0.34), Vector3(-18, -86, -14), Vector3(-0.5, 1.02, 0.02), Vector3(14, 0, 20), Vector3(1.02, 1.06, 0.18), Vector3(-22, -96, -12), true, duration)
 		AttackType.DELAYED_HEAVY:
 			if is_active:
 				_apply_pose_values(Vector3(0.2, 1.06, -0.7), Vector3(58, -18, -46), Vector3(-0.4, 0.94, -0.22), Vector3(18, 0, 12), Vector3(0.08, 0.92, -1.08), Vector3(92, 38, -40), true, duration)
@@ -1800,7 +1882,7 @@ func _update_telegraph_pose_progress() -> void:
 		AttackType.ARMOR_SLAM:
 			_apply_pose_progress(Vector3(0.48, 1.92, 0.12), Vector3(-98, -12, -30), Vector3(-0.44, 1.76, 0.08), Vector3(-88, 12, 28), Vector3(0.18, 2.26, 0.22), Vector3(-104, 0, -12), true, Vector3(0.34, 0.88, -0.64), Vector3(88, 0, -22), Vector3(-0.34, 0.88, -0.62), Vector3(88, 0, 22), Vector3(0.0, 0.62, -0.82), Vector3(104, 0, 0), true, progress)
 		AttackType.RETREAT_SLASH:
-			_apply_pose_progress(Vector3(0.54, 1.02, 0.28), Vector3(-10, -76, -10), Vector3(-0.46, 1.0, -0.04), Vector3(16, 0, 16), Vector3(0.9, 1.0, 0.1), Vector3(-12, -84, -8), true, Vector3(0.36, 1.02, -0.5), Vector3(48, 52, -18), Vector3(-0.42, 1.0, -0.12), Vector3(18, 0, 12), Vector3(0.16, 1.02, -0.94), Vector3(78, 72, -10), true, progress)
+			_apply_pose_progress(Vector3(0.64, 1.08, 0.34), Vector3(-18, -86, -14), Vector3(-0.5, 1.02, 0.02), Vector3(14, 0, 20), Vector3(1.02, 1.06, 0.18), Vector3(-22, -96, -12), true, Vector3(0.28, 1.0, -0.56), Vector3(56, 58, -22), Vector3(-0.44, 0.98, -0.16), Vector3(20, 0, 14), Vector3(0.06, 0.98, -1.0), Vector3(84, 78, -12), true, progress)
 		AttackType.DELAYED_HEAVY:
 			_apply_pose_progress(Vector3(0.56, 1.58, 0.18), Vector3(-72, -28, -28), Vector3(-0.44, 1.0, -0.16), Vector3(18, 0, 12), Vector3(0.66, 2.08, 0.28), Vector3(-98, -22, -24), true, Vector3(0.2, 1.06, -0.7), Vector3(58, -18, -46), Vector3(-0.4, 0.94, -0.22), Vector3(18, 0, 12), Vector3(0.08, 0.92, -1.08), Vector3(92, 38, -40), true, progress)
 		AttackType.GRAB:
@@ -1880,8 +1962,8 @@ func _get_body_visual_pose(attack_type: int, is_active: bool) -> Dictionary:
 			position += Vector3(0.0, -0.18, -0.08) if is_active else Vector3(0.0, -0.13, 0.04)
 			rotation += Vector3(12, 0, 0) if is_active else Vector3(-16, 0, -3)
 		AttackType.RETREAT_SLASH:
-			position += Vector3(0.0, -0.03, 0.08) if is_active else Vector3(0.0, -0.02, 0.16)
-			rotation += Vector3(3, 0, 6) if is_active else Vector3(-5, 0, 8)
+			position += Vector3(0.02, -0.04, -0.08) if is_active else Vector3(-0.03, -0.02, 0.18)
+			rotation += Vector3(5, 0, 8) if is_active else Vector3(-9, 0, 11)
 		AttackType.DELAYED_HEAVY:
 			position += Vector3(0.04, -0.1, -0.1) if is_active else Vector3(0.06, -0.12, 0.08)
 			rotation += Vector3(10, 0, -7) if is_active else Vector3(-13, 0, -9)
@@ -1938,6 +2020,10 @@ func get_debug_current_pattern_name() -> String:
 		return "None"
 
 	return _get_attack_pattern_name(_current_attack_pattern)
+
+func get_debug_slam_status_text() -> String:
+	var is_slam_selected := _pattern_active and _steps_include_slam(_pattern_steps)
+	return "%s / Supp %d" % ["YES" if is_slam_selected else "NO", _slam_suppression_remaining]
 
 func get_debug_distance_band() -> String:
 	var distance_band := _last_ai_distance_band
@@ -2027,6 +2113,7 @@ func reset_combat_state() -> void:
 	_clear_attack_pattern_state()
 	_last_attack_pattern = -1
 	_last_dangerous_outcome_attack_type = -1
+	_slam_suppression_remaining = 0
 	_recent_attack_patterns.clear()
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()
