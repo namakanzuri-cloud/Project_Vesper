@@ -5,26 +5,6 @@ export.cfg
 export_presets.cfg
 *.translation
 
-# Unity generated folders kept ignored while Unity prototype files remain in history/worktree
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
-
-# Unity generated files
-*.csproj
-*.sln
-*.user
-*.pidb
-*.booproj
-*.svd
-*.pdb
-*.mdb
-*.opendb
-*.VC.db
 
 # OS files
 .DS_Store
