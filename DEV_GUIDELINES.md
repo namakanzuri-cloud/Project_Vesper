@@ -118,3 +118,18 @@ Project Vesper は、Godot 4.7 / GDScript で作る 2.5D 見下ろしアクシ�
 - Current tuning target: good mixed play can reach roughly 1-2 Vesper Art attempts per fight; repeated Deflect-only play should be noticeably slower.
 - Keep Flow values exported where possible for Inspector tuning.
 - Keep debug visibility for latest Flow delta/reason and Result JSON Flow source totals when changing Flow balance.
+
+## Result Evaluation / Style Rank Tuning Phase 2
+
+- Keep result scoring focused on how cleanly the fight was won, not only whether the enemy died.
+- Preserve caps/modest weights for Deflect count, max combo, final Flow, and Blood route rewards so repeated single-route play does not reach top ranks by itself.
+- Keep Vesper Art scoring hit-focused: hits are rewarded, misses are penalized, and attempts alone should not add score.
+- Blood Rend self-cost should remain separate from normal damage taken; continue recording it as `bloodCostTotal`.
+- Result JSON should preserve existing flat fields where practical and add grouped breakdown fields for debugging.
+
+## Fast Combo Tempo / Enemy Attack Range Tuning Phase 1
+
+- Fast Combo finisher branch weights are currently `86 / 13 / 1` for heavy / grab / slam; keep Heavy as the primary default and Slam as rare punctuation unless a future task asks otherwise.
+- Current Fast Combo fast-hit gap target is `0.035`, with the finisher transition kept readable and recent finisher repeats reduced by `fast_combo_finisher_repeat_weight_multiplier`.
+- Current distance tuning pushes the old mid-range space into close (`close 3.0`, `mid 3.85`, `far 4.8`) so Fast Combo can appear at the player-tested range.
+- Current attack range/radius defaults are about `1.5x` the previous pressure-tuning values; treat grab as the first value to reduce if it becomes oppressive. Do not change Flow, Vesper Art, Blood Rend, Blood Scent, or result scoring as part of this tuning phase.

@@ -19,9 +19,9 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 
 @export_group("Attack Selection")
 @export var attack_cooldown: float = 0.15
-@export var close_range_distance: float = 2.2
-@export var mid_range_distance: float = 2.65
-@export var far_range_distance: float = 3.05
+@export var close_range_distance: float = 3.0
+@export var mid_range_distance: float = 3.85
+@export var far_range_distance: float = 4.8
 @export var repeat_pattern_avoid_chance: float = 0.65
 @export var repeat_pattern_weight_multiplier: float = 0.35
 @export var recent_pattern_memory_count: int = 2
@@ -50,21 +50,23 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var pressure_into_slam_weight: float = 0.6
 @export var slash_slam_mix_weight: float = 0.5
 @export var retreat_pressure_weight: float = 1.0
-@export var fast_combo_step_interval: float = 0.04
+@export var fast_combo_step_interval: float = 0.035
 @export var grab_mix_step_interval: float = 0.06
 @export var simple_pressure_step_interval: float = 0.04
 @export var pressure_into_slam_step_interval: float = 0.05
 @export var slash_slam_mix_step_interval: float = 0.06
 @export var pattern_end_recovery_time: float = 0.42
 @export var pattern_chain_recovery_multiplier: float = 0.45
-@export var pattern_abort_distance: float = 4.8
+@export var pattern_abort_distance: float = 6.2
 
 @export_group("Fast Combo Finishers")
-@export var fast_combo_heavy_finish_weight: float = 82.0
+@export var fast_combo_heavy_finish_weight: float = 86.0
 @export var fast_combo_grab_finish_weight: float = 13.0
-@export var fast_combo_slam_finish_weight: float = 5.0
+@export var fast_combo_slam_finish_weight: float = 1.0
 @export var suppress_dangerous_finisher_after_dangerous_outcome: bool = true
 @export var fast_combo_finisher_transition_time: float = 0.32
+@export var fast_combo_finisher_repeat_weight_multiplier: float = 0.25
+@export var fast_combo_recent_finisher_memory_count: int = 1
 
 @export_group("Telegraph Tracking")
 @export var telegraph_tracking_enabled: bool = true
@@ -83,8 +85,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var minimal_telegraph_scale_multiplier: float = 1.0
 
 @export_group("Fast Slash")
-@export var fast_slash_range: float = 1.75
-@export var fast_slash_radius: float = 0.92
+@export var fast_slash_range: float = 2.78
+@export var fast_slash_radius: float = 1.47
 @export var fast_slash_damage: float = 11.0
 @export var fast_slash_telegraph_time: float = 0.47
 @export var fast_slash_active_time: float = 0.12
@@ -103,8 +105,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var fast_slash_telegraph_color: Color = Color(0.08, 0.82, 1.0, 0.42)
 
 @export_group("Delayed Heavy Slash")
-@export var delayed_heavy_range: float = 2.1
-@export var delayed_heavy_radius: float = 1.15
+@export var delayed_heavy_range: float = 3.38
+@export var delayed_heavy_radius: float = 1.77
 @export var delayed_heavy_damage: float = 24.0
 @export var delayed_heavy_telegraph_time: float = 1.05
 @export var delayed_heavy_active_time: float = 0.18
@@ -123,8 +125,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var delayed_heavy_telegraph_color: Color = Color(1.0, 0.34, 0.02, 0.5)
 
 @export_group("Grab")
-@export var grab_range: float = 1.35
-@export var grab_radius: float = 0.82
+@export var grab_range: float = 2.1
+@export var grab_radius: float = 1.23
 @export var grab_damage: float = 20.0
 @export var grab_telegraph_time: float = 0.7
 @export var grab_active_time: float = 0.18
@@ -143,8 +145,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var grab_telegraph_color: Color = Color(0.7, 0.05, 1.0, 0.45)
 
 @export_group("Armor Slam")
-@export var armor_slam_range: float = 1.95
-@export var armor_slam_radius: float = 1.38
+@export var armor_slam_range: float = 3.12
+@export var armor_slam_radius: float = 2.18
 @export var armor_slam_damage: float = 32.0
 @export var armor_slam_telegraph_time: float = 1.25
 @export var armor_slam_active_time: float = 0.2
@@ -170,8 +172,8 @@ enum TelegraphVisualMode { FULL_DEBUG, MINIMAL, OFF }
 @export var armor_slam_active_pose_tween_time: float = 0.0
 
 @export_group("Retreat Slash")
-@export var retreat_slash_range: float = 1.75
-@export var retreat_slash_radius: float = 0.92
+@export var retreat_slash_range: float = 2.79
+@export var retreat_slash_radius: float = 1.44
 @export var retreat_slash_damage: float = 11.0
 @export var retreat_slash_telegraph_time: float = 0.64
 @export var retreat_slash_active_time: float = 0.12
@@ -255,6 +257,7 @@ var _last_attack_pattern: int = -1
 var _last_dangerous_outcome_attack_type: int = -1
 var _slam_suppression_remaining: int = 0
 var _recent_attack_patterns: Array[int] = []
+var _recent_fast_combo_finishers: Array[int] = []
 var _last_ai_distance_band: int = DistanceBand.CLOSE
 var _attack_damaged_targets: Array[Node] = []
 var _just_dodged_targets: Array[Node] = []
@@ -1298,7 +1301,9 @@ func _get_pattern_steps(pattern: int) -> Array[int]:
 	return steps
 
 func _get_fast_combo_finisher_attack_type() -> int:
-	match _select_fast_combo_finisher():
+	var finisher := _select_fast_combo_finisher()
+	_remember_fast_combo_finisher(finisher)
+	match finisher:
 		FastComboFinisher.GRAB_FINISH:
 			return AttackType.GRAB
 		FastComboFinisher.SLAM_FINISH:
@@ -1324,10 +1329,28 @@ func _append_fast_combo_finisher_option(options: Array[Dictionary], finisher: in
 	var adjusted_weight := weight
 	if finisher == FastComboFinisher.SLAM_FINISH and _should_suppress_slam_outcome():
 		adjusted_weight *= _get_slam_suppression_multiplier()
+	adjusted_weight *= _get_fast_combo_finisher_memory_multiplier(finisher)
 	if adjusted_weight <= 0.0:
 		return
 
 	options.append({ "finisher": finisher, "weight": adjusted_weight })
+
+func _get_fast_combo_finisher_memory_multiplier(finisher: int) -> float:
+	if fast_combo_recent_finisher_memory_count <= 0:
+		return 1.0
+	if not _recent_fast_combo_finishers.has(finisher):
+		return 1.0
+
+	return clampf(fast_combo_finisher_repeat_weight_multiplier, 0.0, 1.0)
+
+func _remember_fast_combo_finisher(finisher: int) -> void:
+	if fast_combo_recent_finisher_memory_count <= 0:
+		_recent_fast_combo_finishers.clear()
+		return
+
+	_recent_fast_combo_finishers.push_front(finisher)
+	while _recent_fast_combo_finishers.size() > fast_combo_recent_finisher_memory_count:
+		_recent_fast_combo_finishers.pop_back()
 
 func _pick_weighted_fast_combo_finisher(options: Array[Dictionary]) -> int:
 	var total_weight := 0.0
@@ -2115,6 +2138,7 @@ func reset_combat_state() -> void:
 	_last_dangerous_outcome_attack_type = -1
 	_slam_suppression_remaining = 0
 	_recent_attack_patterns.clear()
+	_recent_fast_combo_finishers.clear()
 	_attack_damaged_targets.clear()
 	_just_dodged_targets.clear()
 	_set_attack_hitbox_enabled(false)

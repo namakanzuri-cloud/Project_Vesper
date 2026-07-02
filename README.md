@@ -89,7 +89,8 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - プレイヤー死亡時の死亡表示
 - 敵HP0時の勝利表示
 - 勝利時に Clear Time、Damage Taken、Hit Taken、Max Combo、Parry Count、Just Dodge Count、Interrupt Count などをまとめた簡易リザルトを表示する
-- 勝利/死亡時に直近戦闘結果ログを JSON 形式で生成し、画面の `Copy Result Log` ボタンまたは `F9` でクリップボードへコピーできる
+- 勝利/死亡時に直近戦闘結果ログを JSON 形式で生成し、`user://result_logs/` へ自動保存する
+- 画面の `Copy Result Log` ボタンまたは `F9` で、直近の Result JSON を引き続きクリップボードへコピーできる
 - Result JSON には Rank、Score、Clear Time、Damage Taken、Max Combo、Parry Count、Normal Parry Count、Deflect Count、Max Deflect Chain、Parry Fail Count、Just Dodge Count、Interrupt Count、Vesper Art Hit などが含まれ、テストプレイ結果を共有・分析しやすい
 - 戦闘内容に応じて `D` / `C` / `B` / `A` / `S` / `VESPER` のスタイルランクを表示する
 - Flow、Riposte / Vesper Counter、Just Dodge Counter、Vesper Art などの成功行動がリザルト評価に反映される
@@ -115,10 +116,10 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Fast Combo 1st-3rd hit Deflect tempo, Flow gain, Vesper Art balance, Riposte / Vesper Counter priority, player damage, stamina costs, and result scoring were not intentionally rebalanced in this phase.
 ## Fast Combo Finisher Weight Tuning Phase 1
 
-- Fast Combo finisher defaults are now tuned toward Heavy Finish as the primary ending (`82 / 13 / 5` for heavy / grab / slam).
+- Fast Combo finisher defaults are tuned toward Heavy Finish as the primary ending (`86 / 13 / 1` for heavy / grab / slam).
 - Grab and armor slam finishers remain available as occasional blind-Parry punish routes, but should no longer feel like the default Fast Combo ending.
 - Existing Grab Mix, Pressure into Slam, and Slash Slam Mix patterns were kept tunable; Slam-heavy pattern weights are now reduced so Slam is occasional instead of default pressure.
-- Dangerous-outcome suppression still forces the next Fast Combo finisher back to Heavy, and Slam outcomes now briefly suppress all Slam sources for the next selections.
+- Dangerous-outcome suppression still forces the next Fast Combo finisher back to Heavy, Slam outcomes briefly suppress Slam sources, and recent Fast Combo finishers receive a small repeat-weight penalty.
 - Fast Combo 1st-3rd hit Deflect tempo, Flow, Vesper Art balance, and parry/deflect success rules were intentionally not changed.
 
 ## Slam Frequency Tuning Phase 1
@@ -189,11 +190,19 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Right click: Riposte / Vesper Counter when ready, otherwise `VESPER ART` when Flow is full
 - `R`: 死亡後・勝利後リトライ
 - `F5`: いつでもデバッグリセット
+- Result JSON 自動保存: 勝利/死亡時に `user://result_logs/` へ `YYYYMMDD_HHMMSS_result_rank.json` 形式で保存
 - `Copy Result Log` ボタン: 直近の戦闘結果JSONをクリップボードへコピー
 - `F9`: リザルト表示中に直近の戦闘結果JSONをコピー
 
 入力アクションは `project.godot` の Input Map で管理します。
 `project.godot` 側にイベントが未設定の場合でも、`scripts/input_setup.gd` が実行時にデフォルト入力を補います。
+
+## Result Log 保存
+
+勝利/死亡時の Result JSON は、デフォルトで `user://result_logs/` へ自動保存されます。
+ファイル名は `YYYYMMDD_HHMMSS_result_rank.json` 形式です。例: `20260702_213045_victory_a.json`。
+保存先や自動保存の ON/OFF は、`CombatStats` ノードの Inspector にある `Result Logs` から調整できます。
+リザルトオーバーレイには自動保存の成否と最新保存先が表示され、従来通り `Copy Result Log` ボタンまたは `F9` で直近JSONをクリップボードへコピーできます。
 
 ## 既知の制限
 
@@ -249,3 +258,18 @@ Project Vesper の戦闘は、雑魚を大量に倒すハクスラよりも、
 - Vesper Art still costs `100` Flow, and misses now spend the full `100` to keep it as a committed finisher/read point.
 - Debug HUD shows the latest Flow delta/reason plus run totals for Flow gain, spend, and Deflect-sourced Flow.
 - Result / Run Log JSON includes minimal Flow test fields such as total gain/spend/loss and gain by attack, defense, Deflect, counter, and Blood Scent.
+
+## Result Evaluation / Style Rank Tuning Phase 2
+
+- Result scoring now uses a grouped score breakdown: victory, clear time, clean defense, basic offense, counters, Flow / Vesper Art, Blood route, damage taken, and mistakes.
+- Deflect count, max combo, Just Dodge, normal Parry, counters, Blood route, and final Flow all have caps or modest weights so one-note play does not dominate the rank.
+- Vesper Art gives its main style value on hit; misses are penalized, and unused final Flow is only a small capped bonus.
+- Blood Rend self-cost remains tracked as `bloodCostTotal` and does not count as normal damage taken.
+- Result JSON schema is now `2` and keeps the old flat fields while adding `scoreBreakdown`, `flowSourceTotals`, `styleStats`, and `bloodRouteStats` groups.
+
+## Fast Combo Tempo / Enemy Attack Range Tuning Phase 1
+
+- Fast Combo step interval is slightly tighter (`0.04 -> 0.035`) while the finisher transition remains unchanged for readability.
+- Distance bands were pushed outward (`close 3.0`, `mid 3.85`, `far 4.8`) so the old mid-range play space now counts as close-range pressure.
+- Enemy attack range and radius defaults were scaled to about `1.5x` from the previous pressure-tuning values, including grab; this is intentionally aggressive for prototype feel testing.
+- Fast Combo finisher weights are now `86 / 13 / 1` for heavy / grab / slam, with a recent-finisher repeat multiplier of `0.25`; `pattern_abort_distance` is `6.2` to match the larger threat ranges. Flow, Vesper Art, Blood routes, and result scoring were intentionally unchanged.
